@@ -1,4 +1,4 @@
-// index.js with PostgreSQL coordinate storage for Render
+// index.js with PostgreSQL coordinate storage for Render + how to join auto replies
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
@@ -140,11 +140,62 @@ client.on('interactionCreate', async interaction => {
 
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
-  if (message.content.startsWith('!ask')) {
+  const content = message.content.toLowerCase();
+
+  // !ask support
+  if (content.startsWith('!ask')) {
     const prompt = message.content.slice(5).trim();
     if (!prompt) return message.reply('❌ Ask something after `!ask`');
     const reply = await getAIResponse(prompt);
     message.reply(reply);
+    return;
+  }
+
+  // Join instructions
+  const asksAboutConsole = content.includes('how') && content.includes('join') && (
+    content.includes('console') || content.includes('xbox') || content.includes('ps4') ||
+    content.includes('ps5') || content.includes('switch') || content.includes('mobile') || content.includes('phone')
+  );
+
+  const asksAboutJava = content.includes('how') && content.includes('join') && (
+    content.includes('java') || content.includes('java edition')
+  );
+
+  const asksForServerInfo = content.includes('how do i join') ||
+    content.includes('server ip') ||
+    content.includes('join server') ||
+    content.includes('what is the server') ||
+    (content.includes('server') && content.includes('address'));
+
+  if (asksForServerInfo) {
+    message.channel.send(
+      `⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n` +
+      `**Server Name:** SlxshyNationCraft\n` +
+      `**Server Address:** 87.106.101.66\n` +
+      `**Server Port:** 6367`
+    );
+    return;
+  }
+
+  if (asksAboutConsole) {
+    message.channel.send(
+      `📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile)**:\n` +
+      `Download the **"BedrockTogether"** app on your phone.\n` +
+      `Enter this server:\n` +
+      `**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\n` +
+      `Then open Minecraft → Friends tab (or Worlds tab in new UI) → Join via LAN.\n` +
+      `You can close the app after connecting.`
+    );
+    return;
+  }
+
+  if (asksAboutJava) {
+    message.channel.send(
+      `💻 **Java Edition Notice**:\n` +
+      `SlxshyNationCraft is a **Bedrock-only** server.\n` +
+      `Java Edition players can’t join — sorry!`
+    );
+    return;
   }
 });
 
