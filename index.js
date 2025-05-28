@@ -6,7 +6,6 @@ const { Client, GatewayIntentBits } = require('discord.js');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Optional web server just to keep the app alive
 app.get('/', (req, res) => {
     res.send('Bot is running!');
 });
@@ -15,7 +14,6 @@ app.listen(PORT, () => {
     console.log(`🌐 Web server running on port ${PORT}`);
 });
 
-// --- Discord Bot setup ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -59,8 +57,37 @@ client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
     const content = message.content.toLowerCase();
+
     const serverKeywords = ['minecraft', 'server', 'ip', 'address', 'join'];
+    const consoleKeywords = ['console', 'xbox', 'ps4', 'ps5', 'switch', 'phone', 'mobile', 'bedrocktogether', 'android', 'ios'];
+    const javaKeywords = ['java', 'java edition', 'java minecraft'];
+
     const mentionsServer = serverKeywords.some(keyword => content.includes(keyword));
+    const asksAboutConsole = consoleKeywords.some(keyword => content.includes(keyword)) && content.includes('join');
+    const asksAboutJava = javaKeywords.some(keyword => content.includes(keyword)) && content.includes('join');
+
+    if (asksAboutConsole) {
+        message.channel.send(
+            `📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile)**:\n` +
+            `If you are on console and want to join the server, download the **"BedrockTogether"** app on your phone.\n` +
+            `Open the app, enter the server IP and port:\n` +
+            `**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\n` +
+            `Then open Minecraft and go to the "Friends" tab (or "Worlds" tab in the new UI).\n` +
+            `Join the server from the **LAN section**.\n` +
+            `You can close the BedrockTogether app once connected.`
+        );
+        return;
+    }
+
+    if (asksAboutJava) {
+        message.channel.send(
+            `💻 **Java Edition Notice**:\n` +
+            `Unfortunately, the SlxshyNationCraft MC server is a **Bedrock-only** server 😢\n` +
+            `There is currently no way for Java players to join it.\n` +
+            `We’re sorry for the inconvenience!`
+        );
+        return;
+    }
 
     if (mentionsServer) {
         message.channel.send(
