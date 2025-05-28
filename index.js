@@ -33,17 +33,12 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const MODEL = process.env.MODEL;
 const CLIENT_ID = process.env.CLIENT_ID;
 
-client.once('ready', () => {
-    console.log(`✅ Logged in as ${client.user.tag}!`);
-});
-
-// Register /joke slash command
+// Register slash commands
 const commands = [
     new SlashCommandBuilder()
         .setName('joke')
         .setDescription('Get a random AI-generated joke')
-        .toJSON()
-];
+].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
 
@@ -85,14 +80,33 @@ client.on('messageCreate', async (message) => {
 
     const content = message.content.toLowerCase();
 
-    const serverKeywords = ['minecraft', 'server', 'ip', 'address', 'join'];
+    // Trigger conditions
+    const asksForServerInfo = (
+        content.includes('how do i join') ||
+        content.includes('server ip') ||
+        content.includes('join server') ||
+        content.includes('what is the server') ||
+        (content.includes('server') && content.includes('address'))
+    );
+
     const consoleKeywords = ['console', 'xbox', 'ps4', 'ps5', 'switch', 'phone', 'mobile', 'bedrocktogether', 'android', 'ios'];
     const javaKeywords = ['java', 'java edition', 'java minecraft'];
 
-    const mentionsServer = serverKeywords.some(keyword => content.includes(keyword));
     const asksAboutConsole = consoleKeywords.some(keyword => content.includes(keyword)) && content.includes('join');
     const asksAboutJava = javaKeywords.some(keyword => content.includes(keyword)) && content.includes('join');
 
+    // Respond with server info
+    if (asksForServerInfo) {
+        message.channel.send(
+            `⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n` +
+            `**Server Name:** SlxshyNationCraft\n` +
+            `**Server Address:** 87.106.101.66\n` +
+            `**Server Port:** 6367`
+        );
+        return;
+    }
+
+    // Respond to console/mobile join questions
     if (asksAboutConsole) {
         message.channel.send(
             `📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile)**:\n` +
@@ -106,6 +120,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
+    // Respond to Java edition join attempts
     if (asksAboutJava) {
         message.channel.send(
             `💻 **Java Edition Notice**:\n` +
@@ -116,16 +131,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    if (mentionsServer) {
-        message.channel.send(
-            `⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n` +
-            `**Server Name:** SlxshyNationCraft\n` +
-            `**Server Address:** 87.106.101.66\n` +
-            `**Server Port:** 6367`
-        );
-        return;
-    }
-
+    // Handle !ask for AI queries
     if (content.startsWith("!ask")) {
         const userQuestion = message.content.slice(5).trim();
         if (!userQuestion) {
@@ -138,12 +144,12 @@ client.on('messageCreate', async (message) => {
     }
 });
 
+// Slash command: /joke
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'joke') {
         await interaction.deferReply();
-
         const jokePrompt = "Tell me a funny and original joke suitable for a general audience.";
 
         try {
