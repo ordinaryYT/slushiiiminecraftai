@@ -1,7 +1,13 @@
 require('dotenv').config();
 const axios = require('axios');
 const express = require('express');
-const { Client, GatewayIntentBits } = require('discord.js');
+const {
+    Client,
+    GatewayIntentBits,
+    REST,
+    Routes,
+    SlashCommandBuilder
+} = require('discord.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,10 +31,31 @@ const client = new Client({
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const MODEL = process.env.MODEL;
+const CLIENT_ID = process.env.CLIENT_ID;
 
 client.once('ready', () => {
     console.log(`✅ Logged in as ${client.user.tag}!`);
 });
+
+// Register /joke slash command
+const commands = [
+    new SlashCommandBuilder()
+        .setName('joke')
+        .setDescription('Get a random AI-generated joke')
+        .toJSON()
+];
+
+const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
+
+(async () => {
+    try {
+        console.log('🔁 Registering slash commands...');
+        await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+        console.log('✅ Slash commands registered.');
+    } catch (error) {
+        console.error('❌ Error registering slash commands:', error);
+    }
+})();
 
 async function getAIResponse(userQuestion) {
     try {
@@ -108,6 +135,23 @@ client.on('messageCreate', async (message) => {
 
         const aiReply = await getAIResponse(userQuestion);
         message.channel.send(aiReply);
+    }
+});
+
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+
+    if (interaction.commandName === 'joke') {
+        await interaction.deferReply();
+
+        const jokePrompt = "Tell me a funny and original joke suitable for a general audience.";
+
+        try {
+            const joke = await getAIResponse(jokePrompt);
+            await interaction.editReply(joke);
+        } catch (error) {
+            await interaction.editReply("❌ Couldn't get a joke right now. Try again later!");
+        }
     }
 });
 
