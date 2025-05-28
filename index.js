@@ -36,11 +36,10 @@ const MODEL = process.env.MODEL;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-// Path to cords.json
+// --- Coordinate Storage ---
 const CORDS_FILE = path.join(__dirname, 'cords.json');
 let savedCords = { public: [], private: {} };
 
-// Load or initialize cords.json
 if (fs.existsSync(CORDS_FILE)) {
     savedCords = JSON.parse(fs.readFileSync(CORDS_FILE, 'utf-8'));
 } else {
@@ -51,7 +50,7 @@ function saveCordsToFile() {
     fs.writeFileSync(CORDS_FILE, JSON.stringify(savedCords, null, 2));
 }
 
-// Register slash commands
+// --- Slash Commands ---
 const commands = [
     new SlashCommandBuilder()
         .setName('joke')
@@ -96,7 +95,7 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
     }
 })();
 
-// AI response function
+// --- AI Function ---
 async function getAIResponse(userQuestion) {
     try {
         const response = await axios.post(
@@ -120,7 +119,7 @@ async function getAIResponse(userQuestion) {
     }
 }
 
-// Slash command handling
+// --- Slash Command Handling ---
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -186,6 +185,23 @@ client.on('interactionCreate', async (interaction) => {
         ).join('\n\n');
 
         await interaction.reply({ content: `🔒 **Your Private Coordinates:**\n\n${list}`, ephemeral: true });
+    }
+});
+
+// --- Handle !ask messages ---
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    const content = message.content.toLowerCase();
+    if (content.startsWith("!ask")) {
+        const userQuestion = message.content.slice(5).trim();
+        if (!userQuestion) {
+            message.channel.send("❌ Please ask a question after `!ask`.");
+            return;
+        }
+
+        const aiReply = await getAIResponse(userQuestion);
+        message.channel.send(aiReply);
     }
 });
 
