@@ -33,8 +33,9 @@ const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const MODEL = process.env.MODEL;
 const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
 
-// --- Load or create cords.json ---
+// Load or create cords.json
 const CORDS_FILE = 'cords.json';
 let savedCords = { public: [], private: {} };
 
@@ -48,7 +49,7 @@ function saveCordsToFile() {
     fs.writeFileSync(CORDS_FILE, JSON.stringify(savedCords, null, 2));
 }
 
-// --- Slash Commands Setup ---
+// Slash Commands Setup
 const commands = [
     new SlashCommandBuilder()
         .setName('joke')
@@ -61,7 +62,6 @@ const commands = [
         .addIntegerOption(opt => opt.setName('x').setDescription('X coordinate').setRequired(true))
         .addIntegerOption(opt => opt.setName('y').setDescription('Y coordinate').setRequired(true))
         .addIntegerOption(opt => opt.setName('z').setDescription('Z coordinate').setRequired(true))
-        .addStringOption(opt => opt.setName('description').setDescription('What is at this location?').setRequired(false))
         .addStringOption(opt =>
             opt.setName('visibility')
                 .setDescription('Public or Private?')
@@ -70,7 +70,8 @@ const commands = [
                     { name: 'Public', value: 'public' },
                     { name: 'Private', value: 'private' }
                 )
-        ),
+        )
+        .addStringOption(opt => opt.setName('description').setDescription('What is at this location?')),
 
     new SlashCommandBuilder()
         .setName('publiccords')
@@ -81,19 +82,20 @@ const commands = [
         .setDescription('List your saved private coordinates')
 ].map(cmd => cmd.toJSON());
 
+// Register slash commands instantly to the guild
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
 
 (async () => {
     try {
-        console.log('🔁 Registering slash commands...');
-        await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-        console.log('✅ Slash commands registered.');
+        console.log('🔁 Registering slash commands for guild...');
+        await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+        console.log('✅ Slash commands registered to guild.');
     } catch (error) {
         console.error('❌ Error registering slash commands:', error);
     }
 })();
 
-// --- OpenRouter AI ---
+// OpenRouter AI request
 async function getAIResponse(userQuestion) {
     try {
         const response = await axios.post(
@@ -117,7 +119,7 @@ async function getAIResponse(userQuestion) {
     }
 }
 
-// --- Slash Command Handlers ---
+// Handle slash commands
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -184,6 +186,10 @@ client.on('interactionCreate', async (interaction) => {
 
         await interaction.reply({ content: `🔒 **Your Private Coordinates:**\n\n${list}`, ephemeral: true });
     }
+});
+
+client.once('ready', () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
 client.login(DISCORD_BOT_TOKEN);
