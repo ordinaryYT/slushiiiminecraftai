@@ -1,5 +1,6 @@
 require('dotenv').config();
 const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
 const express = require('express');
 const {
@@ -35,12 +36,13 @@ const MODEL = process.env.MODEL;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-// Load or create cords.json
-const CORDS_FILE = 'cords.json';
+// Path to cords.json
+const CORDS_FILE = path.join(__dirname, 'cords.json');
 let savedCords = { public: [], private: {} };
 
+// Load or initialize cords.json
 if (fs.existsSync(CORDS_FILE)) {
-    savedCords = JSON.parse(fs.readFileSync(CORDS_FILE));
+    savedCords = JSON.parse(fs.readFileSync(CORDS_FILE, 'utf-8'));
 } else {
     fs.writeFileSync(CORDS_FILE, JSON.stringify(savedCords, null, 2));
 }
@@ -49,7 +51,7 @@ function saveCordsToFile() {
     fs.writeFileSync(CORDS_FILE, JSON.stringify(savedCords, null, 2));
 }
 
-// Slash Commands Setup
+// Register slash commands
 const commands = [
     new SlashCommandBuilder()
         .setName('joke')
@@ -82,20 +84,19 @@ const commands = [
         .setDescription('List your saved private coordinates')
 ].map(cmd => cmd.toJSON());
 
-// Register slash commands instantly to the guild
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
 
 (async () => {
     try {
         console.log('🔁 Registering slash commands for guild...');
         await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
-        console.log('✅ Slash commands registered to guild.');
+        console.log('✅ Slash commands registered.');
     } catch (error) {
         console.error('❌ Error registering slash commands:', error);
     }
 })();
 
-// OpenRouter AI request
+// AI response function
 async function getAIResponse(userQuestion) {
     try {
         const response = await axios.post(
@@ -119,7 +120,7 @@ async function getAIResponse(userQuestion) {
     }
 }
 
-// Handle slash commands
+// Slash command handling
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
