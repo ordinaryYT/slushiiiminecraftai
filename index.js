@@ -1,4 +1,4 @@
-// index.js with timeout-safe /serverinfo command and structured response
+// index.js full working version with slash commands, PostgreSQL, server status, serverinfo filter, and anti-timeout protection
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
@@ -68,7 +68,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('serverinfo')
-    .setDescription('Get Minecraft server info')
+    .setDescription('Get Minecraft server info (mcstatus.io)')
     .addStringOption(o => {
       o.setName('filter').setDescription('Choose specific info to view').setRequired(false);
       serverInfoChoices.forEach(choice => o.addChoices({ name: choice, value: choice }));
@@ -145,4 +145,11 @@ client.on('interactionCreate', async interaction => {
       }
     }
   }
+});
+
+console.log('🔐 Logging in to Discord...');
+client.login(DISCORD_BOT_TOKEN);
+
+client.once('ready', () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
 });
