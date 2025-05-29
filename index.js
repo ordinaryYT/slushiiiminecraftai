@@ -62,7 +62,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('serverinfo')
-    .setDescription('Get detailed Minecraft server info from mcstatus.io')
+    .setDescription('Get Minecraft server info')
     .addStringOption(o =>
       o.setName('filter')
        .setDescription('Optional field to filter (e.g. version, motd, players, etc.)')
