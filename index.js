@@ -1,4 +1,4 @@
-// index.js with PostgreSQL storage + improved /serverinfo filtering and UI
+// index.js with timeout-safe /serverinfo command and structured response
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
@@ -104,33 +104,6 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   const { commandName, user, options } = interaction;
 
-  if (commandName === 'joke') {
-    await interaction.deferReply();
-    const joke = await getAIResponse('Tell me a funny, original joke.');
-    return interaction.editReply(joke);
-  }
-
-  if (commandName === 'savecords') {
-    await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [user.id, options.getString('name'), options.getInteger('x'), options.getInteger('y'), options.getInteger('z'), options.getString('description') || 'No description', options.getString('visibility')]);
-    return interaction.reply(`✅ Saved **${options.getString('name')}** as **${options.getString('visibility')}**.`);
-  }
-
-  if (commandName === 'publiccords') {
-    const res = await db.query(`SELECT * FROM cords WHERE visibility = 'public' ORDER BY created_at DESC`);
-    if (!res.rows.length) return interaction.reply('📭 No public cords found.');
-    const list = res.rows.map(r => `📍 **${r.name}** - (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}`).join('\n\n');
-    return interaction.reply({ content: list, ephemeral: false });
-  }
-
-  if (commandName === 'privatecords') {
-    const res = await db.query(`SELECT * FROM cords WHERE user_id = $1 AND visibility = 'private' ORDER BY created_at DESC`, [user.id]);
-    if (!res.rows.length) return interaction.reply({ content: '📭 No private cords found.', ephemeral: true });
-    const list = res.rows.map(r => `📍 **${r.name}** - (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}`).join('\n\n');
-    return interaction.reply({ content: list, ephemeral: true });
-  }
-
   if (commandName === 'serverinfo') {
     await interaction.deferReply();
     try {
@@ -141,9 +114,9 @@ client.on('interactionCreate', async interaction => {
       if (filter) {
         const value = data[filter];
         if (value === undefined) {
-          return interaction.editReply(`❌ Could not find info for \`${filter}\`.`);
+          return await interaction.editReply(`❌ Could not find info for \`${filter}\`.`);
         }
-        return interaction.editReply({
+        return await interaction.editReply({
           embeds: [{
             title: `SlxshyNationCraft - ${filter}`,
             description: `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``,
@@ -151,23 +124,25 @@ client.on('interactionCreate', async interaction => {
           }]
         });
       } else {
-        const replyEmbed = {
+        const embed = {
           title: '🟢 SlxshyNationCraft Server Info',
           color: 0x00ffcc,
           fields: [
             { name: 'Online', value: data.online ? 'Yes' : 'No', inline: true },
             { name: 'Host', value: data.host || 'N/A', inline: true },
-            { name: 'Port', value: String(data.port || 'N/A'), inline: true },
+            { name: 'Port', value: `${data.port || 'N/A'}`, inline: true },
             { name: 'Version', value: data.version?.name || 'N/A', inline: true },
             { name: 'Gamemode', value: data.gamemode || 'N/A', inline: true },
             { name: 'Players', value: `${data.players?.online || 0}/${data.players?.max || '?'}`, inline: true }
           ]
         };
-        return interaction.editReply({ embeds: [replyEmbed] });
+        return await interaction.editReply({ embeds: [embed] });
       }
     } catch (err) {
       console.error('Server info error:', err);
-      return interaction.editReply('❌ Failed to fetch server info.');
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply('❌ Failed to fetch server info.');
+      }
     }
   }
 });
