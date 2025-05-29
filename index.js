@@ -1,4 +1,4 @@
-// index.js with PostgreSQL storage + status monitor + join help + slash commands
+// index.js with PostgreSQL storage + server status + /serverinfo command
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
@@ -23,7 +23,7 @@ const MODEL = process.env.MODEL;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const DATABASE_URL = process.env.DATABASE_URL;
-const STATUS_CHANNEL_ID = process.env.STATUS_CHANNEL_ID; // NEW
+const STATUS_CHANNEL_ID = process.env.STATUS_CHANNEL_ID;
 
 const db = new Pool({ connectionString: DATABASE_URL });
 
@@ -45,6 +45,7 @@ const initDb = async () => {
 
 const commands = [
   new SlashCommandBuilder().setName('joke').setDescription('Get a random AI-generated joke'),
+
   new SlashCommandBuilder()
     .setName('savecords')
     .setDescription('Save coordinates')
@@ -55,8 +56,17 @@ const commands = [
     .addStringOption(o => o.setName('visibility').setDescription('public or private').setRequired(true)
       .addChoices({ name: 'Public', value: 'public' }, { name: 'Private', value: 'private' }))
     .addStringOption(o => o.setName('description').setDescription('Optional description')),
+
   new SlashCommandBuilder().setName('publiccords').setDescription('Show public coordinates'),
-  new SlashCommandBuilder().setName('privatecords').setDescription('Show your private coordinates')
+  new SlashCommandBuilder().setName('privatecords').setDescription('Show your private coordinates'),
+
+  new SlashCommandBuilder()
+    .setName('serverinfo')
+    .setDescription('Get detailed Minecraft server info from mcstatus.io')
+    .addStringOption(o =>
+      o.setName('filter')
+       .setDescription('Optional field to filter (e.g. version, motd, players, etc.)')
+       .setRequired(false))
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
@@ -113,6 +123,29 @@ client.on('interactionCreate', async interaction => {
     const list = res.rows.map(r => `📍 **${r.name}** - (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}`).join('\n\n');
     return interaction.reply({ content: list, ephemeral: true });
   }
+
+  if (commandName === 'serverinfo') {
+    await interaction.deferReply();
+    try {
+      const response = await axios.get('https://api.mcstatus.io/v2/status/bedrock/87.106.101.66:6367');
+      const data = response.data;
+      const filter = options.getString('filter');
+
+      if (filter) {
+        const value = data[filter];
+        if (value === undefined) {
+          return interaction.editReply(`❌ Could not find info for \`${filter}\`.`);
+        }
+        return interaction.editReply(`**${filter}:**\n\`\`\`${JSON.stringify(value, null, 2)}\`\`\``);
+      } else {
+        return interaction.editReply(`📊 **Server Info:**\n\`\`\`json\n${JSON.stringify(data, null, 2)}
+\`\`\``);
+      }
+    } catch (err) {
+      console.error('Server info error:', err);
+      return interaction.editReply('❌ Failed to fetch server info.');
+    }
+  }
 });
 
 client.on('messageCreate', async message => {
@@ -127,30 +160,23 @@ client.on('messageCreate', async message => {
   }
 
   if (content.includes('how do i join') || content.includes('how to join') || content.includes('server ip') || content.includes('join server') || content.includes('what is the server') || (content.includes('server') && content.includes('address'))) {
-    return message.channel.send(
-      `⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**Server Address:** 87.106.101.66\n**Server Port:** 6367`
-    );
+    return message.channel.send(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**Server Address:** 87.106.101.66\n**Server Port:** 6367`);
   }
 
   if (content.includes('join') && (
     content.includes('console') || content.includes('xbox') || content.includes('ps4') || content.includes('ps5') || content.includes('switch') || content.includes('mobile') || content.includes('phone')
   )) {
-    return message.channel.send(
-      `📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab (or Worlds tab in new UI) → Join via LAN.\nYou can close the app after connecting.`
-    );
+    return message.channel.send(`📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab (or Worlds tab in new UI) → Join via LAN.\nYou can close the app after connecting.`);
   }
 
   if (content.includes('join') && content.includes('java')) {
-    return message.channel.send(
-      `💻 **Java Edition Notice**:\nSlxshyNationCraft is a **Bedrock-only** server.\nJava Edition players can’t join — sorry!`
-    );
+    return message.channel.send(`💻 **Java Edition Notice**:\nSlxshyNationCraft is a **Bedrock-only** server.\nJava Edition players can’t join — sorry!`);
   }
 });
 
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  // Minecraft server status monitor
   const statusUrl = 'https://api.mcstatus.io/v2/status/bedrock/87.106.101.66:6367';
   let lastStatus = null;
 
@@ -175,7 +201,7 @@ client.once('ready', () => {
     } catch (err) {
       console.error('Error checking Minecraft server status:', err);
     }
-  }, 30000); // check every 30 seconds
+  }, 30000);
 });
 
 client.login(DISCORD_BOT_TOKEN);
