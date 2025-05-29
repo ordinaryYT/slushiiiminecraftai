@@ -1,4 +1,4 @@
-// index.js with PostgreSQL storage + server status + /serverinfo command
+// index.js with PostgreSQL storage + improved /serverinfo filtering and UI
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
@@ -43,6 +43,12 @@ const initDb = async () => {
   `);
 };
 
+const serverInfoChoices = [
+  'online', 'host', 'port', 'version', 'players', 'gamemode',
+  'serverid', 'edition', 'software', 'plugins', 'motd',
+  'expires_at', 'retrieved_at', 'eula_blocked'
+];
+
 const commands = [
   new SlashCommandBuilder().setName('joke').setDescription('Get a random AI-generated joke'),
 
@@ -63,10 +69,11 @@ const commands = [
   new SlashCommandBuilder()
     .setName('serverinfo')
     .setDescription('Get Minecraft server info')
-    .addStringOption(o =>
-      o.setName('filter')
-       .setDescription('Optional field to filter (e.g. version, motd, players, etc.)')
-       .setRequired(false))
+    .addStringOption(o => {
+      o.setName('filter').setDescription('Choose specific info to view').setRequired(false);
+      serverInfoChoices.forEach(choice => o.addChoices({ name: choice, value: choice }));
+      return o;
+    })
 ].map(cmd => cmd.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
@@ -136,10 +143,27 @@ client.on('interactionCreate', async interaction => {
         if (value === undefined) {
           return interaction.editReply(`❌ Could not find info for \`${filter}\`.`);
         }
-        return interaction.editReply(`**${filter}:**\n\`\`\`${JSON.stringify(value, null, 2)}\`\`\``);
+        return interaction.editReply({
+          embeds: [{
+            title: `SlxshyNationCraft - ${filter}`,
+            description: `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``,
+            color: 0x00ff99
+          }]
+        });
       } else {
-        return interaction.editReply(`📊 **Server Info:**\n\`\`\`json\n${JSON.stringify(data, null, 2)}
-\`\`\``);
+        const replyEmbed = {
+          title: '🟢 SlxshyNationCraft Server Info',
+          color: 0x00ffcc,
+          fields: [
+            { name: 'Online', value: data.online ? 'Yes' : 'No', inline: true },
+            { name: 'Host', value: data.host || 'N/A', inline: true },
+            { name: 'Port', value: String(data.port || 'N/A'), inline: true },
+            { name: 'Version', value: data.version?.name || 'N/A', inline: true },
+            { name: 'Gamemode', value: data.gamemode || 'N/A', inline: true },
+            { name: 'Players', value: `${data.players?.online || 0}/${data.players?.max || '?'}`, inline: true }
+          ]
+        };
+        return interaction.editReply({ embeds: [replyEmbed] });
       }
     } catch (err) {
       console.error('Server info error:', err);
@@ -147,61 +171,3 @@ client.on('interactionCreate', async interaction => {
     }
   }
 });
-
-client.on('messageCreate', async message => {
-  if (message.author.bot) return;
-  const content = message.content.toLowerCase();
-
-  if (content.startsWith('!ask')) {
-    const prompt = message.content.slice(5).trim();
-    if (!prompt) return message.reply('❌ Ask something after `!ask`');
-    const reply = await getAIResponse(prompt);
-    return message.reply(reply);
-  }
-
-  if (content.includes('how do i join') || content.includes('how to join') || content.includes('server ip') || content.includes('join server') || content.includes('what is the server') || (content.includes('server') && content.includes('address'))) {
-    return message.channel.send(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**Server Address:** 87.106.101.66\n**Server Port:** 6367`);
-  }
-
-  if (content.includes('join') && (
-    content.includes('console') || content.includes('xbox') || content.includes('ps4') || content.includes('ps5') || content.includes('switch') || content.includes('mobile') || content.includes('phone')
-  )) {
-    return message.channel.send(`📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab (or Worlds tab in new UI) → Join via LAN.\nYou can close the app after connecting.`);
-  }
-
-  if (content.includes('join') && content.includes('java')) {
-    return message.channel.send(`💻 **Java Edition Notice**:\nSlxshyNationCraft is a **Bedrock-only** server.\nJava Edition players can’t join — sorry!`);
-  }
-});
-
-client.once('ready', () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-
-  const statusUrl = 'https://api.mcstatus.io/v2/status/bedrock/87.106.101.66:6367';
-  let lastStatus = null;
-
-  setInterval(async () => {
-    try {
-      const res = await axios.get(statusUrl);
-      const isOnline = res.data?.online;
-
-      if (lastStatus === null) {
-        lastStatus = isOnline;
-        return;
-      }
-
-      if (isOnline !== lastStatus) {
-        const channel = await client.channels.fetch(STATUS_CHANNEL_ID);
-        if (channel && channel.isTextBased()) {
-          const statusMsg = isOnline ? '🟢 **Server is now ONLINE!**' : '🔴 **Server is now OFFLINE.**';
-          channel.send(statusMsg);
-        }
-        lastStatus = isOnline;
-      }
-    } catch (err) {
-      console.error('Error checking Minecraft server status:', err);
-    }
-  }, 30000);
-});
-
-client.login(DISCORD_BOT_TOKEN);
