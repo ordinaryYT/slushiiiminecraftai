@@ -1,4 +1,4 @@
-// Full bot with /savecords, /publiccords, /privatecords, /serverinfo, join help, and logging
+// Complete bot with full features: server info, cords commands, auto-replies, and login
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
@@ -83,6 +83,23 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
   await initDb();
 })();
 
+client.on('messageCreate', async message => {
+  if (message.author.bot) return;
+  const content = message.content.toLowerCase();
+
+  if (content.includes('how do i join') || content.includes('how to join') || content.includes('join server')) {
+    return message.reply(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**IP:** 87.106.101.66\n**Port:** 6367`);
+  }
+
+  if (content.includes('switch') || content.includes('console') || content.includes('xbox') || content.includes('ps4') || content.includes('ps5') || content.includes('phone') || content.includes('mobile')) {
+    return message.reply(`📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab (or Worlds tab in new UI) → Join via LAN.`);
+  }
+
+  if (content.includes('java')) {
+    return message.reply(`💻 **Java Edition Notice**:\nSlxshyNationCraft is a **Bedrock-only** server.\nJava Edition players can’t join — sorry!`);
+  }
+});
+
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   const { commandName, user, options } = interaction;
@@ -99,14 +116,6 @@ client.on('interactionCreate', async interaction => {
     }
   }
 
-  if (commandName === 'publiccords') {
-    await interaction.deferReply();
-    const res = await db.query(`SELECT * FROM cords WHERE visibility = 'public' ORDER BY created_at DESC`);
-    if (!res.rows.length) return interaction.editReply('📭 No public cords found.');
-    const list = res.rows.map(r => `📍 **${r.name}** - (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}`).join('\n\n');
-    return interaction.editReply({ content: list });
-  }
-
   if (commandName === 'savecords') {
     await interaction.deferReply({ ephemeral: true });
     await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility)
@@ -119,6 +128,14 @@ client.on('interactionCreate', async interaction => {
     await interaction.deferReply({ ephemeral: true });
     const res = await db.query(`SELECT * FROM cords WHERE user_id = $1 AND visibility = 'private' ORDER BY created_at DESC`, [user.id]);
     if (!res.rows.length) return interaction.editReply('📭 No private cords found.');
+    const list = res.rows.map(r => `📍 **${r.name}** - (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}`).join('\n\n');
+    return interaction.editReply({ content: list });
+  }
+
+  if (commandName === 'publiccords') {
+    await interaction.deferReply();
+    const res = await db.query(`SELECT * FROM cords WHERE visibility = 'public' ORDER BY created_at DESC`);
+    if (!res.rows.length) return interaction.editReply('📭 No public cords found.');
     const list = res.rows.map(r => `📍 **${r.name}** - (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}`).join('\n\n');
     return interaction.editReply({ content: list });
   }
@@ -160,3 +177,39 @@ client.on('interactionCreate', async interaction => {
     }
   }
 });
+
+client.once('ready', () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+  const statusUrl = 'https://api.mcstatus.io/v2/status/bedrock/87.106.101.66:6367';
+  let lastStatus = null;
+  let lastOnlineCount = 0;
+
+  setInterval(async () => {
+    try {
+      const res = await axios.get(statusUrl);
+      const data = res.data;
+      const isOnline = data?.online;
+      const onlineCount = data.players?.online || 0;
+      const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
+
+      if (lastStatus !== null && isOnline !== lastStatus) {
+        const statusMsg = isOnline
+          ? '🟢 **Server is now ONLINE!**'
+          : '🔴 **Server is now OFFLINE.**';
+        if (logChannel?.isTextBased()) await logChannel.send(statusMsg);
+        lastStatus = isOnline;
+      }
+      if (lastStatus === null) lastStatus = isOnline;
+
+      if (onlineCount !== lastOnlineCount) {
+        const msg = `👥 **Player Count Changed:** ${lastOnlineCount} → ${onlineCount}`;
+        if (logChannel?.isTextBased()) await logChannel.send(msg);
+        lastOnlineCount = onlineCount;
+      }
+    } catch (err) {
+      console.error('Status check error:', err);
+    }
+  }, 10000);
+});
+
+client.login(DISCORD_BOT_TOKEN);
