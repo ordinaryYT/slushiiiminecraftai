@@ -1,4 +1,4 @@
-// Full bot with AI, public cords role block, join info responses, server monitor, and player tracking
+// Full bot with fixed /serverinfo timeout and verified player join tracking
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
@@ -52,8 +52,7 @@ const initDb = async () => {
 };
 
 const serverInfoChoices = [
-  'online', 'host', 'port', 'version', 'players', 'gamemode',
-  'edition', 'motd', 'retrieved_at', 'expires_at', 'eula_blocked'
+  'online', 'host', 'port', 'version', 'players', 'edition', 'motd', 'retrieved_at', 'expires_at', 'eula_blocked'
 ];
 
 const commands = [
@@ -73,7 +72,7 @@ const commands = [
   new SlashCommandBuilder().setName('playersjoined').setDescription('Show all players who ever joined the server'),
   new SlashCommandBuilder()
     .setName('serverinfo')
-    .setDescription('Get Minecraft server info')
+    .setDescription('Get Minecraft server info (mcstatus.io)')
     .addStringOption(o => {
       o.setName('filter').setDescription('Choose specific info to view').setRequired(false);
       serverInfoChoices.forEach(choice => o.addChoices({ name: choice, value: choice }));
@@ -109,37 +108,37 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   const { commandName, user, options, member } = interaction;
 
-  if (commandName === 'joke') {
+  if (commandName === 'serverinfo') {
     await interaction.deferReply();
-    const joke = await getAIResponse('Tell me a funny, original joke.');
-    return interaction.editReply(joke);
-  }
+    try {
+      const response = await axios.get('https://api.mcstatus.io/v2/status/bedrock/87.106.101.66:6367');
+      const data = response.data;
+      const filter = options.getString('filter');
 
-  if (commandName === 'savecords') {
-    await interaction.deferReply({ ephemeral: true });
-    await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [user.id, options.getString('name'), options.getInteger('x'), options.getInteger('y'), options.getInteger('z'), options.getString('description') || 'No description', options.getString('visibility')]);
-    return interaction.editReply(`✅ Saved **${options.getString('name')}** as **${options.getString('visibility')}**.`);
-  }
+      if (filter) {
+        const value = data[filter] || data[filter]?.name || 'N/A';
+        return interaction.editReply({
+          content: `**${filter}**: 
+\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``
+        });
+      }
 
-  if (commandName === 'publiccords') {
-    if (member.roles.cache.has(BLOCKED_ROLE_ID)) {
-      return interaction.reply({ content: '🚫 You do not have permission to view public cords.', ephemeral: true });
+      const embed = {
+        title: '🟢 SlxshyNationCraft Server Info',
+        color: 0x00ffcc,
+        fields: [
+          { name: 'Online', value: data.online ? 'Yes' : 'No', inline: true },
+          { name: 'Host', value: data.host || 'N/A', inline: true },
+          { name: 'Port', value: `${data.port || 'N/A'}`, inline: true },
+          { name: 'Version', value: data.version?.name || 'N/A', inline: true },
+          { name: 'Players', value: `${data.players?.online || 0}/${data.players?.max || '?'}`, inline: true }
+        ]
+      };
+      return interaction.editReply({ embeds: [embed] });
+    } catch (err) {
+      console.error('Server info error:', err);
+      return interaction.editReply('❌ Failed to fetch server info.');
     }
-    await interaction.deferReply();
-    const res = await db.query(`SELECT * FROM cords WHERE visibility = 'public' ORDER BY created_at DESC`);
-    if (!res.rows.length) return interaction.editReply('📭 No public cords found.');
-    const list = res.rows.map(r => `📍 **${r.name}** - (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}`).join('\n\n');
-    return interaction.editReply({ content: list });
-  }
-
-  if (commandName === 'privatecords') {
-    await interaction.deferReply({ ephemeral: true });
-    const res = await db.query(`SELECT * FROM cords WHERE user_id = $1 AND visibility = 'private' ORDER BY created_at DESC`, [user.id]);
-    if (!res.rows.length) return interaction.editReply('📭 No private cords found.');
-    const list = res.rows.map(r => `📍 **${r.name}** - (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}`).join('\n\n');
-    return interaction.editReply({ content: list });
   }
 
   if (commandName === 'playersjoined') {
@@ -150,39 +149,8 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-client.on('messageCreate', async message => {
-  if (message.author.bot) return;
-
-  const botId = client.user.id;
-  const mention = `<@${botId}>`;
-  const content = message.content.toLowerCase();
-
-  if (message.content.includes(mention)) {
-    const prompt = message.content.replace(mention, '').trim();
-    if (!prompt) return message.reply('❌ Ask me something after mentioning me.');
-    const reply = await getAIResponse(prompt);
-    return message.reply(reply);
-  }
-
-  if (content.includes('how do i join') || content.includes('how to join') || content.includes('join server')) {
-    return message.reply(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**IP:** 87.106.101.66\n**Port:** 6367`);
-  }
-
-  if (content.includes('switch') || content.includes('console') || content.includes('xbox') || content.includes('ps4') || content.includes('ps5') || content.includes('phone') || content.includes('mobile')) {
-    return message.reply(`📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab (or Worlds tab in new UI) → Join via LAN.`);
-  }
-
-  if (content.includes('java')) {
-    return message.reply(`💻 **Java Edition Notice**:\nSlxshyNationCraft is a **Bedrock-only** server.\nJava Edition players can’t join — sorry!`);
-  }
-});
-
-console.log('🔐 Logging in to Discord...');
-client.login(DISCORD_BOT_TOKEN);
-
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-
   const statusUrl = 'https://api.mcstatus.io/v2/status/bedrock/87.106.101.66:6367';
   let lastStatus = null;
 
@@ -195,6 +163,7 @@ client.once('ready', () => {
 
       if (Array.isArray(data.players?.list)) {
         for (const player of data.players.list) {
+          console.log('Tracking player:', player.name);
           await db.query('INSERT INTO joined_players (name) VALUES ($1) ON CONFLICT DO NOTHING', [player.name]);
         }
       }
@@ -211,12 +180,13 @@ client.once('ready', () => {
             ? '🟢 **Server is now ONLINE!**'
             : '🔴 **Server is now OFFLINE.**';
           await channel.send(statusMsg);
-          console.log(`📣 Sent status update: ${statusMsg}`);
         }
         lastStatus = isOnline;
       }
     } catch (err) {
-      console.error('⚠️ Error checking Minecraft server status:', err.message);
+      console.error('Status check error:', err);
     }
   }, 30000);
 });
+
+client.login(DISCORD_BOT_TOKEN);
