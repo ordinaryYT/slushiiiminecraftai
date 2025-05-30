@@ -73,7 +73,7 @@ const commands = [
   new SlashCommandBuilder().setName('playersjoined').setDescription('Show all players who ever joined the server'),
   new SlashCommandBuilder()
     .setName('serverinfo')
-    .setDescription('Get Minecraft server info (mcstatus.io)')
+    .setDescription('Get Minecraft server info')
     .addStringOption(o => {
       o.setName('filter').setDescription('Choose specific info to view').setRequired(false);
       serverInfoChoices.forEach(choice => o.addChoices({ name: choice, value: choice }));
