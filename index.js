@@ -198,6 +198,8 @@ client.once('ready', async () => {
         if (logChannel?.isTextBased()) await logChannel.send(msg);
         lastStatus = isOnline;
       }
+      if (lastStatus === null) lastStatus = isOnline;
+
       if (onlineCount !== lastOnlineCount) {
         const msg = `👥 Player Count Changed: ${lastOnlineCount} → ${onlineCount}`;
         if (logChannel?.isTextBased()) await logChannel.send(msg);
@@ -206,7 +208,7 @@ client.once('ready', async () => {
     } catch (err) {
       console.error('❌ Polling error:', err);
     }
-  }, 10000);
+  }, 30000);
 });
 
 client.login(DISCORD_BOT_TOKEN);
