@@ -1,4 +1,4 @@
-// Full bot with all slash commands, full serverinfo filters, logging, and how-to-join help
+// Full bot with /savecords, /publiccords, /privatecords, /serverinfo, join help, and logging
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
@@ -66,6 +66,7 @@ const commands = [
       .addChoices({ name: 'Public', value: 'public' }, { name: 'Private', value: 'private' }))
     .addStringOption(o => o.setName('description').setDescription('Optional description')),
   new SlashCommandBuilder().setName('privatecords').setDescription('Show your private coordinates'),
+  new SlashCommandBuilder().setName('publiccords').setDescription('Show all public coordinates'),
   new SlashCommandBuilder()
     .setName('serverinfo')
     .setDescription('Get Minecraft server info')
@@ -85,6 +86,42 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   const { commandName, user, options } = interaction;
+
+  if (commandName === 'playersjoined') {
+    try {
+      const res = await db.query(`SELECT name, first_seen FROM joined_players ORDER BY first_seen ASC`);
+      if (!res.rows.length) return interaction.reply('📭 No players have joined yet.');
+      const list = res.rows.map(p => `👤 **${p.name}** (since ${new Date(p.first_seen).toLocaleDateString()})`).join('\n');
+      return interaction.reply({ content: list.length > 2000 ? 'Too many players to display!' : list });
+    } catch (err) {
+      console.error('Error fetching playersjoined:', err);
+      return interaction.reply('❌ Failed to fetch joined players.');
+    }
+  }
+
+  if (commandName === 'publiccords') {
+    await interaction.deferReply();
+    const res = await db.query(`SELECT * FROM cords WHERE visibility = 'public' ORDER BY created_at DESC`);
+    if (!res.rows.length) return interaction.editReply('📭 No public cords found.');
+    const list = res.rows.map(r => `📍 **${r.name}** - (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}`).join('\n\n');
+    return interaction.editReply({ content: list });
+  }
+
+  if (commandName === 'savecords') {
+    await interaction.deferReply({ ephemeral: true });
+    await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [user.id, options.getString('name'), options.getInteger('x'), options.getInteger('y'), options.getInteger('z'), options.getString('description') || 'No description', options.getString('visibility')]);
+    return interaction.editReply(`✅ Saved **${options.getString('name')}** as **${options.getString('visibility')}**.`);
+  }
+
+  if (commandName === 'privatecords') {
+    await interaction.deferReply({ ephemeral: true });
+    const res = await db.query(`SELECT * FROM cords WHERE user_id = $1 AND visibility = 'private' ORDER BY created_at DESC`, [user.id]);
+    if (!res.rows.length) return interaction.editReply('📭 No private cords found.');
+    const list = res.rows.map(r => `📍 **${r.name}** - (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}`).join('\n\n');
+    return interaction.editReply({ content: list });
+  }
 
   if (commandName === 'serverinfo') {
     await interaction.deferReply();
@@ -123,56 +160,3 @@ client.on('interactionCreate', async interaction => {
     }
   }
 });
-
-client.on('messageCreate', async message => {
-  if (message.author.bot) return;
-  const content = message.content.toLowerCase();
-
-  if (content.includes('how do i join') || content.includes('how to join') || content.includes('join server')) {
-    return message.reply(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**IP:** 87.106.101.66\n**Port:** 6367`);
-  }
-
-  if (content.includes('switch') || content.includes('console') || content.includes('xbox') || content.includes('ps4') || content.includes('ps5') || content.includes('phone') || content.includes('mobile')) {
-    return message.reply(`📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab (or Worlds tab in new UI) → Join via LAN.`);
-  }
-
-  if (content.includes('java')) {
-    return message.reply(`💻 **Java Edition Notice**:\nSlxshyNationCraft is a **Bedrock-only** server.\nJava Edition players can’t join — sorry!`);
-  }
-});
-
-client.once('ready', () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-  const statusUrl = 'https://api.mcstatus.io/v2/status/bedrock/87.106.101.66:6367';
-  let lastStatus = null;
-  let lastOnlineCount = 0;
-
-  setInterval(async () => {
-    try {
-      const res = await axios.get(statusUrl);
-      const data = res.data;
-      const isOnline = data?.online;
-      const onlineCount = data.players?.online || 0;
-      const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
-
-      if (lastStatus !== null && isOnline !== lastStatus) {
-        const statusMsg = isOnline
-          ? '🟢 **Server is now ONLINE!**'
-          : '🔴 **Server is now OFFLINE.**';
-        if (logChannel?.isTextBased()) await logChannel.send(statusMsg);
-        lastStatus = isOnline;
-      }
-      if (lastStatus === null) lastStatus = isOnline;
-
-      if (onlineCount !== lastOnlineCount) {
-        const msg = `👥 **Player Count Changed:** ${lastOnlineCount} → ${onlineCount}`;
-        if (logChannel?.isTextBased()) await logChannel.send(msg);
-        lastOnlineCount = onlineCount;
-      }
-    } catch (err) {
-      console.error('Status check error:', err);
-    }
-  }, 10000);
-});
-
-client.login(DISCORD_BOT_TOKEN);
