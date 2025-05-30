@@ -1,4 +1,4 @@
-// Full bot with mention AI, restricted /publiccords, join info replies, and server monitor
+// Full bot with AI, public cords role block, join info responses, server monitor, and player tracking
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
@@ -42,6 +42,13 @@ const initDb = async () => {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS joined_players (
+      id SERIAL PRIMARY KEY,
+      name TEXT UNIQUE,
+      first_seen TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
 };
 
 const serverInfoChoices = [
@@ -63,9 +70,10 @@ const commands = [
     .addStringOption(o => o.setName('description').setDescription('Optional description')),
   new SlashCommandBuilder().setName('publiccords').setDescription('Show public coordinates'),
   new SlashCommandBuilder().setName('privatecords').setDescription('Show your private coordinates'),
+  new SlashCommandBuilder().setName('playersjoined').setDescription('Show all players who ever joined the server'),
   new SlashCommandBuilder()
     .setName('serverinfo')
-    .setDescription('Get Minecraft server info')
+    .setDescription('Get Minecraft server info (mcstatus.io)')
     .addStringOption(o => {
       o.setName('filter').setDescription('Choose specific info to view').setRequired(false);
       serverInfoChoices.forEach(choice => o.addChoices({ name: choice, value: choice }));
@@ -133,6 +141,13 @@ client.on('interactionCreate', async interaction => {
     const list = res.rows.map(r => `📍 **${r.name}** - (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}`).join('\n\n');
     return interaction.editReply({ content: list });
   }
+
+  if (commandName === 'playersjoined') {
+    const res = await db.query(`SELECT name, first_seen FROM joined_players ORDER BY first_seen ASC`);
+    if (!res.rows.length) return interaction.reply('📭 No players have joined yet.');
+    const list = res.rows.map(p => `👤 **${p.name}** (since ${new Date(p.first_seen).toLocaleDateString()})`).join('\n');
+    return interaction.reply({ content: list.length > 2000 ? 'Too many players to display!' : list });
+  }
 });
 
 client.on('messageCreate', async message => {
@@ -174,8 +189,15 @@ client.once('ready', () => {
   setInterval(async () => {
     try {
       const res = await axios.get(statusUrl);
-      const isOnline = res.data?.online;
+      const data = res.data;
+      const isOnline = data?.online;
       console.log(`🕒 Server status: ${isOnline ? 'ONLINE' : 'OFFLINE'}`);
+
+      if (Array.isArray(data.players?.list)) {
+        for (const player of data.players.list) {
+          await db.query('INSERT INTO joined_players (name) VALUES ($1) ON CONFLICT DO NOTHING', [player.name]);
+        }
+      }
 
       if (lastStatus === null) {
         lastStatus = isOnline;
