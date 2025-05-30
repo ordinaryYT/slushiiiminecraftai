@@ -1,4 +1,4 @@
-// Full Discord bot with all features correctly restored
+// Complete and fully restored bot: commands, join replies, AI, logs
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
@@ -48,6 +48,41 @@ const initDb = async () => {
     );
   `);
 };
+
+const serverInfoFields = [
+  'online', 'host', 'port', 'version', 'players', 'gamemode',
+  'edition', 'software', 'plugins', 'motd', 'retrieved_at', 'expires_at', 'eula_blocked'
+];
+
+const commands = [
+  new SlashCommandBuilder().setName('playersjoined').setDescription('Show all players who ever joined the server'),
+  new SlashCommandBuilder()
+    .setName('savecords')
+    .setDescription('Save coordinates')
+    .addStringOption(o => o.setName('name').setDescription('Name').setRequired(true))
+    .addIntegerOption(o => o.setName('x').setDescription('X').setRequired(true))
+    .addIntegerOption(o => o.setName('y').setDescription('Y').setRequired(true))
+    .addIntegerOption(o => o.setName('z').setDescription('Z').setRequired(true))
+    .addStringOption(o => o.setName('visibility').setDescription('public or private').setRequired(true)
+      .addChoices({ name: 'Public', value: 'public' }, { name: 'Private', value: 'private' }))
+    .addStringOption(o => o.setName('description').setDescription('Optional description')),
+  new SlashCommandBuilder().setName('privatecords').setDescription('Show your private coordinates'),
+  new SlashCommandBuilder().setName('publiccords').setDescription('Show all public coordinates'),
+  new SlashCommandBuilder()
+    .setName('serverinfo')
+    .setDescription('Get Minecraft server info')
+    .addStringOption(o => {
+      o.setName('filter').setDescription('Select specific server info').setRequired(false);
+      serverInfoFields.forEach(f => o.addChoices({ name: f, value: f }));
+      return o;
+    })
+].map(cmd => cmd.toJSON());
+
+const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
+(async () => {
+  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+  await initDb();
+})();
 
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
