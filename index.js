@@ -172,7 +172,7 @@ client.once('ready', () => {
     } catch (err) {
       console.error('Status check error:', err);
     }
-  }, 30000);
+  }, 10000);
 });
 
 client.login(DISCORD_BOT_TOKEN);
