@@ -120,14 +120,13 @@ client.on('interactionCreate', async interaction => {
 
   if (commandName === 'savecords') {
     await interaction.deferReply({ ephemeral: true });
-    const { name, x, y, z, description, visibility } = {
-      name: options.getString('name'),
-      x: options.getInteger('x'),
-      y: options.getInteger('y'),
-      z: options.getInteger('z'),
-      description: options.getString('description') || 'No description',
-      visibility: options.getString('visibility')
-    };
+    const name = options.getString('name');
+    const x = options.getInteger('x');
+    const y = options.getInteger('y');
+    const z = options.getInteger('z');
+    const visibility = options.getString('visibility');
+    const description = options.getString('description') || 'No description';
+
     await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility)
                     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [user.id, name, x, y, z, description, visibility]);
@@ -178,10 +177,10 @@ client.on('interactionCreate', async interaction => {
   }
 
   if (commandName === 'generateimage') {
-    await interaction.deferReply();
-    const prompt = options.getString('prompt');
-
     try {
+      await interaction.deferReply(); // Defer FIRST to avoid timeout
+
+      const prompt = options.getString('prompt');
       const res = await axios.post('https://openrouter.ai/api/v1/images/generations', {
         model: 'stability-ai/sdxl-turbo',
         prompt: prompt,
@@ -195,13 +194,19 @@ client.on('interactionCreate', async interaction => {
       });
 
       const imageUrl = res.data?.data?.[0]?.url;
-      if (!imageUrl) return interaction.editReply('⚠️ No image returned.');
+      if (!imageUrl) {
+        return interaction.editReply('⚠️ No image returned.');
+      }
 
       return interaction.editReply({ content: `🖼️ Image for: **${prompt}**`, files: [imageUrl] });
 
-    } catch (error) {
-      console.error('❌ Image generation error:', error.response?.data || error.message);
-      return interaction.editReply('❌ Failed to generate image.');
+    } catch (err) {
+      console.error('❌ Image generation error:', err.response?.data || err.message);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply('❌ Failed to generate image.');
+      } else {
+        await interaction.reply('❌ Failed to generate image.');
+      }
     }
   }
 });
