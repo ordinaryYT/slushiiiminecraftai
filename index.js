@@ -211,4 +211,4 @@ client.once('ready', async () => {
   }, 30000);
 });
 
-client.login(DISCORD_BOT_TOKEN); 
+client.login(DISCORD_BOT_TOKEN);
