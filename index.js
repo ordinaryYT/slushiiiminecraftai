@@ -4,7 +4,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const axios = require('axios');
 
-const { Player } = require('discord-player');
+const { Player, Extractors } = require('discord-player');
 
 const app = express();
 app.get('/', (req, res) => res.send('Bot is running'));
@@ -15,7 +15,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates, // for voice/musics
+    GatewayIntentBits.GuildVoiceStates, // Needed for voice
   ]
 });
 
@@ -63,10 +63,7 @@ const commands = [
     .addIntegerOption(o => o.setName('y').setDescription('Y').setRequired(true))
     .addIntegerOption(o => o.setName('z').setDescription('Z').setRequired(true))
     .addStringOption(o => o.setName('visibility').setDescription('public or private').setRequired(true)
-      .addChoices(
-        { name: 'Public', value: 'public' },
-        { name: 'Private', value: 'private' }
-      ))
+      .addChoices({ name: 'Public', value: 'public' }, { name: 'Private', value: 'private' }))
     .addStringOption(o => o.setName('description').setDescription('Optional description')),
   new SlashCommandBuilder().setName('privatecords').setDescription('Show your private coordinates'),
   new SlashCommandBuilder().setName('publiccords').setDescription('Show all public coordinates'),
@@ -90,17 +87,17 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
   await initDb();
 })();
 
-// Initialize music player
+// Initialize the music player
 const player = new Player(client);
+
 (async () => {
-  await player.extractors.loadMulti();
+  await Extractors.loadMulti();
 })();
 
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
-  const content = message.content.toLowerCase();
 
-  // AI Chat on mention
+  // AI via mention
   if (message.mentions.has(client.user)) {
     const prompt = message.content.replace(/<@!?\d+>/, '').trim();
     if (!prompt) return message.reply('❌ You must say something.');
@@ -122,11 +119,12 @@ client.on('messageCreate', async message => {
     }
   }
 
-  // Basic replies for server join info
+  // Server info replies on certain keywords
+  const content = message.content.toLowerCase();
   if (content.includes('how do i join') || content.includes('how to join') || content.includes('join server')) {
     return message.reply(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**IP:** 87.106.101.66\n**Port:** 6367`);
   }
-  if (content.includes('switch') || content.includes('console') || content.includes('xbox') || content.includes('ps4') || content.includes('ps5') || content.includes('phone') || content.includes('mobile')) {
+  if (content.match(/switch|console|xbox|ps4|ps5|phone|mobile/)) {
     return message.reply(`📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab (or Worlds tab in new UI) → Join via LAN.`);
   }
   if (content.includes('java')) {
@@ -136,9 +134,10 @@ client.on('messageCreate', async message => {
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
+
   const { commandName, user, options, member, guild } = interaction;
 
-  // Coordinates commands
+  // Coordinates
   if (commandName === 'savecords') {
     await interaction.deferReply({ ephemeral: true });
     const name = options.getString('name');
@@ -147,8 +146,8 @@ client.on('interactionCreate', async interaction => {
     const z = options.getInteger('z');
     const description = options.getString('description') || 'No description';
     const visibility = options.getString('visibility');
-    await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+
+    await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [user.id, name, x, y, z, description, visibility]);
     return interaction.editReply(`✅ Saved **${name}** as **${visibility}**.`);
   }
@@ -181,108 +180,96 @@ client.on('interactionCreate', async interaction => {
     const filter = options.getString('filter');
     try {
       const { data } = await axios.get('https://mcstatus.io/api/v2/status/java/87.106.101.66:6367');
-      const info = data?.players ? data : null;
-      if (!info) return interaction.editReply('❌ Server info not available.');
+      if (!data) return interaction.editReply('❌ Server info not available.');
 
       if (filter) {
-        if (!(filter in info)) return interaction.editReply(`❌ No data for filter: ${filter}`);
-        return interaction.editReply(`**${filter}**: ${JSON.stringify(info[filter], null, 2)}`);
+        if (!(filter in data)) return interaction.editReply(`❌ No data for filter: ${filter}`);
+        return interaction.editReply(`**${filter}**: ${JSON.stringify(data[filter], null, 2)}`);
       }
 
-      // Show basic info embed
       const embed = new EmbedBuilder()
         .setTitle('Minecraft Server Info')
-        .setDescription(`Status for SlxshyNationCraft`)
-        .setColor(info.online ? 'Green' : 'Red')
+        .setDescription('Status for SlxshyNationCraft')
+        .setColor(data.online ? 'Green' : 'Red')
         .addFields(
-          { name: 'Online', value: String(info.online), inline: true },
-          { name: 'Players Online', value: info.players?.online?.toString() || '0', inline: true },
-          { name: 'Version', value: info.version?.name || 'Unknown', inline: true },
-          { name: 'MOTD', value: info.motd?.clean || 'N/A' }
+          { name: 'Online', value: String(data.online), inline: true },
+          { name: 'Players Online', value: data.players?.online?.toString() || '0', inline: true },
+          { name: 'Version', value: data.version?.name || 'Unknown', inline: true },
+          { name: 'MOTD', value: data.motd?.clean || 'N/A' }
         )
         .setTimestamp();
+
       return interaction.editReply({ embeds: [embed] });
-    } catch (e) {
+    } catch {
       return interaction.editReply('❌ Failed to fetch server info.');
     }
   }
 
   // Music commands
   if (commandName === 'join') {
-    if (!member.voice.channel) return interaction.reply('❌ You need to join a voice channel first!');
+    if (!member.voice.channel) return interaction.reply({ content: '❌ You must be in a voice channel!', ephemeral: true });
+    const queue = player.nodes.get(interaction.guildId) || player.nodes.create(interaction.guild, { metadata: { channel: interaction.channel } });
     try {
-      const queue = player.getQueue(guild.id);
-      if (queue && queue.connection) {
-        return interaction.reply('✅ Already connected!');
-      }
-      const connection = await player.voiceUtils.joinVoiceChannel({
-        channelId: member.voice.channel.id,
-        guildId: guild.id,
-        adapterCreator: guild.voiceAdapterCreator,
-      });
+      await queue.connect(member.voice.channel);
       return interaction.reply('✅ Joined your voice channel!');
-    } catch (err) {
-      console.error(err);
-      return interaction.reply('❌ Failed to join your voice channel.');
+    } catch {
+      return interaction.reply('❌ Failed to join voice channel.');
     }
   }
 
   if (commandName === 'leave') {
-    const queue = player.getQueue(guild.id);
-    if (queue) queue.destroy();
-    return interaction.reply('👋 Left the voice channel and stopped music.');
+    const queue = player.nodes.get(interaction.guildId);
+    if (!queue) return interaction.reply('❌ Not connected to a voice channel.');
+    queue.destroy();
+    return interaction.reply('👋 Left the voice channel and stopped playback.');
   }
 
   if (commandName === 'play') {
-    if (!member.voice.channel) return interaction.reply('❌ You need to join a voice channel first!');
     const query = options.getString('query');
+    if (!member.voice.channel) return interaction.reply({ content: '❌ You must be in a voice channel!', ephemeral: true });
 
-    let queue = player.getQueue(guild.id);
-    if (!queue) {
-      queue = player.createQueue(guild, {
-        metadata: {
-          channel: interaction.channel
-        },
-        leaveOnEmptyCooldown: 300000, // 5 min before leaving if empty
-        leaveOnEnd: false, // keep connection after queue ends (24/7)
-      });
-    }
-
+    const queue = player.nodes.get(interaction.guildId) || player.nodes.create(interaction.guild, { metadata: { channel: interaction.channel } });
     try {
       if (!queue.connection) await queue.connect(member.voice.channel);
-      const track = await queue.play(query, { requestedBy: interaction.user });
-      return interaction.reply(`🎶 Added **${track.title}** to the queue!`);
+
+      const track = await queue.search(query, { requestedBy: member.user }).then(x => x.tracks[0]);
+      if (!track) return interaction.reply('❌ No results found.');
+
+      queue.addTrack(track);
+      if (!queue.isPlaying()) await queue.node.play();
+
+      return interaction.reply(`▶️ Added **${track.title}** to the queue!`);
     } catch (error) {
       console.error(error);
-      return interaction.reply('❌ Could not play your track.');
+      return interaction.reply('❌ Error playing track.');
     }
   }
 
   if (commandName === 'skip') {
-    const queue = player.getQueue(guild.id);
-    if (!queue || !queue.playing) return interaction.reply('❌ No music playing.');
-    const currentTrack = queue.current;
-    const success = queue.skip();
-    return interaction.reply(success ? `⏭ Skipped: **${currentTrack.title}**` : '❌ Could not skip.');
+    const queue = player.nodes.get(interaction.guildId);
+    if (!queue || !queue.isPlaying()) return interaction.reply('❌ No music playing.');
+    const currentTrack = queue.currentTrack;
+    queue.node.skip();
+    return interaction.reply(`⏭ Skipped **${currentTrack.title}**.`);
   }
 
   if (commandName === 'stop') {
-    const queue = player.getQueue(guild.id);
-    if (!queue) return interaction.reply('❌ No music playing.');
-    queue.stop();
+    const queue = player.nodes.get(interaction.guildId);
+    if (!queue || !queue.isPlaying()) return interaction.reply('❌ No music playing.');
+    queue.delete();
     return interaction.reply('⏹ Stopped playback and cleared queue.');
   }
 
   if (commandName === 'queue') {
-    const queue = player.getQueue(guild.id);
-    if (!queue || !queue.playing) return interaction.reply('📭 Queue is empty.');
-    const tracks = queue.tracks.slice(0, 10).map((track, i) => `${i + 1}. ${track.title} - ${track.requestedBy.tag}`);
-    return interaction.reply(`🎵 Current queue:\n${tracks.join('\n')}`);
+    const queue = player.nodes.get(interaction.guildId);
+    if (!queue || !queue.isPlaying()) return interaction.reply('❌ No music playing.');
+    const tracks = queue.tracks.slice(0, 10).map((t, i) => `${i + 1}. ${t.title} (requested by ${t.requestedBy.username})`).join('\n');
+    return interaction.reply(`🎶 Current queue:\n${tracks || 'No upcoming tracks.'}`);
   }
 });
 
-client.on('ready', () => {
-  console.log(`Logged in as ${client.user.tag}!`);
+client.once('ready', () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
 client.login(DISCORD_BOT_TOKEN);
