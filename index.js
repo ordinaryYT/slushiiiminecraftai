@@ -1,9 +1,10 @@
-// Clean full bot code with @mention AI, all commands, logs, and join replies
+// Full bot code with music support added (requires FFmpeg, discord-player, @discordjs/voice, and @discordjs/opus)
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
 const { Pool } = require('pg');
 const axios = require('axios');
+const { Player } = require('discord-player');
 
 const app = express();
 app.get('/', (req, res) => res.send('Bot is running'));
@@ -13,9 +14,13 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates // Required for music
   ]
 });
+
+const player = new Player(client);
+client.player = player;
 
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -68,7 +73,10 @@ const commands = [
   new SlashCommandBuilder().setName('playersjoined').setDescription('List all players that joined'),
   new SlashCommandBuilder().setName('serverinfo').setDescription('Get Minecraft server info')
     .addStringOption(o => o.setName('filter').setDescription('Filter info').setRequired(false)
-      .addChoices(...serverInfoFields.map(f => ({ name: f, value: f }))))
+      .addChoices(...serverInfoFields.map(f => ({ name: f, value: f })))),
+  new SlashCommandBuilder().setName('play').setDescription('Play a song').addStringOption(o => o.setName('query').setDescription('Song name or URL').setRequired(true)),
+  new SlashCommandBuilder().setName('skip').setDescription('Skip the current song'),
+  new SlashCommandBuilder().setName('queue').setDescription('Show song queue')
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
@@ -81,7 +89,6 @@ client.on('messageCreate', async message => {
   if (message.author.bot) return;
   const content = message.content.toLowerCase();
 
-  // AI via mention
   if (message.mentions.has(client.user)) {
     const prompt = message.content.replace(/<@!?\d+>/, '').trim();
     if (!prompt) return message.reply('❌ You must say something.');
@@ -103,7 +110,6 @@ client.on('messageCreate', async message => {
     }
   }
 
-  // Join replies
   if (content.includes('how do i join') || content.includes('how to join') || content.includes('join server')) {
     return message.reply(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**IP:** 87.106.101.66\n**Port:** 6367`);
   }
@@ -129,8 +135,7 @@ client.on('interactionCreate', async interaction => {
       description: options.getString('description') || 'No description',
       visibility: options.getString('visibility')
     };
-    await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [user.id, name, x, y, z, description, visibility]);
     return interaction.editReply(`✅ Saved **${name}** as **${visibility}**.`);
   }
@@ -176,6 +181,28 @@ client.on('interactionCreate', async interaction => {
       console.error(err);
       return interaction.editReply('❌ Failed to fetch server info.');
     }
+  }
+
+  if (commandName === 'play') {
+    const query = options.getString('query');
+    const channel = interaction.member.voice.channel;
+    if (!channel) return interaction.reply('❌ You need to be in a voice channel.');
+    const res = await client.player.play(channel, query, { metadata: { interaction } });
+    return interaction.reply(`🎶 Playing: **${res.track.title}**`);
+  }
+
+  if (commandName === 'skip') {
+    const queue = client.player.nodes.get(interaction.guild.id);
+    if (!queue || !queue.isPlaying()) return interaction.reply('❌ Nothing is playing.');
+    queue.node.skip();
+    return interaction.reply('⏭️ Skipped!');
+  }
+
+  if (commandName === 'queue') {
+    const queue = client.player.nodes.get(interaction.guild.id);
+    if (!queue || !queue.tracks.size) return interaction.reply('📭 No songs in queue.');
+    const tracks = queue.tracks.toArray().map((t, i) => `${i + 1}. **${t.title}**`).join('\n');
+    return interaction.reply(`🎵 Queue:\n${tracks}`);
   }
 });
 
