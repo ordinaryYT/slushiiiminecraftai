@@ -3,7 +3,6 @@ const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require
 const express = require('express');
 const { Pool } = require('pg');
 const axios = require('axios');
-const { OpenAI } = require('openai');
 
 const app = express();
 app.get('/', (req, res) => res.send('Bot is running'));
@@ -22,11 +21,9 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const DATABASE_URL = process.env.DATABASE_URL;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const LOG_CHANNEL_ID = '1377938133341180016';
 
 const db = new Pool({ connectionString: DATABASE_URL });
-const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 const initDb = async () => {
   await db.query(`
@@ -85,7 +82,7 @@ client.on('messageCreate', async message => {
   if (message.author.bot) return;
   const content = message.content.toLowerCase();
 
-  // AI via mention
+  // AI Chat via @mention using openai/gpt-3.5-turbo
   if (message.mentions.has(client.user)) {
     const prompt = message.content.replace(/<@!?\d+>/, '').trim();
     if (!prompt) return message.reply('❌ You must say something.');
@@ -185,17 +182,27 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'generateimage') {
     await interaction.deferReply();
     const prompt = options.getString('prompt');
+
     try {
-      const imageRes = await openai.images.generate({
-        model: "dall-e-3",
+      const res = await axios.post('https://openrouter.ai/api/v1/images/generations', {
+        model: 'stability-ai/sdxl',
         prompt: prompt,
         n: 1,
-        size: "1024x1024"
+        size: '1024x1024'
+      }, {
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
       });
-      const imageUrl = imageRes.data[0].url;
+
+      const imageUrl = res.data?.data?.[0]?.url;
+      if (!imageUrl) return interaction.editReply('⚠️ No image returned.');
+
       return interaction.editReply({ content: `🖼️ Image for: **${prompt}**`, files: [imageUrl] });
+
     } catch (error) {
-      console.error('❌ Image generation error:', error);
+      console.error('❌ Image generation error:', error.response?.data || error.message);
       return interaction.editReply('❌ Failed to generate image.');
     }
   }
