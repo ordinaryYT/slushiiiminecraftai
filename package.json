@@ -1,7 +1,7 @@
 {
   "name": "discord-ai-bot",
   "version": "1.0.0",
-  "description": "A Discord bot using OpenRouter AI and PostgreSQL for coordinate storage on Render",
+  "description": "A Discord bot using OpenRouter AI and PostgreSQL for coordinate storage on Render, with 24/7 music support",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -30,6 +30,6 @@
     "ffmpeg-static": "^5.1.0"
   },
   "engines": {
-    "node": "20.x"
+    "node": ">=20.0.0"
   }
 }
