@@ -1,9 +1,9 @@
-// Clean full bot code with @mention AI, all commands, logs, and join replies
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
 const { Pool } = require('pg');
 const axios = require('axios');
+const { OpenAI } = require('openai');
 
 const app = express();
 app.get('/', (req, res) => res.send('Bot is running'));
@@ -22,9 +22,11 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const DATABASE_URL = process.env.DATABASE_URL;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const LOG_CHANNEL_ID = '1377938133341180016';
 
 const db = new Pool({ connectionString: DATABASE_URL });
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
 
 const initDb = async () => {
   await db.query(`
@@ -68,7 +70,9 @@ const commands = [
   new SlashCommandBuilder().setName('playersjoined').setDescription('List all players that joined'),
   new SlashCommandBuilder().setName('serverinfo').setDescription('Get Minecraft server info')
     .addStringOption(o => o.setName('filter').setDescription('Filter info').setRequired(false)
-      .addChoices(...serverInfoFields.map(f => ({ name: f, value: f }))))
+      .addChoices(...serverInfoFields.map(f => ({ name: f, value: f })))),
+  new SlashCommandBuilder().setName('generateimage').setDescription('Generate an image from a prompt')
+    .addStringOption(o => o.setName('prompt').setDescription('Describe the image').setRequired(true))
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
@@ -175,6 +179,24 @@ client.on('interactionCreate', async interaction => {
     } catch (err) {
       console.error(err);
       return interaction.editReply('❌ Failed to fetch server info.');
+    }
+  }
+
+  if (commandName === 'generateimage') {
+    await interaction.deferReply();
+    const prompt = options.getString('prompt');
+    try {
+      const imageRes = await openai.images.generate({
+        model: "dall-e-3",
+        prompt: prompt,
+        n: 1,
+        size: "1024x1024"
+      });
+      const imageUrl = imageRes.data[0].url;
+      return interaction.editReply({ content: `🖼️ Image for: **${prompt}**`, files: [imageUrl] });
+    } catch (error) {
+      console.error('❌ Image generation error:', error);
+      return interaction.editReply('❌ Failed to generate image.');
     }
   }
 });
