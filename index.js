@@ -68,8 +68,8 @@ const commands = [
   new SlashCommandBuilder().setName('serverinfo').setDescription('Get Minecraft server info')
     .addStringOption(o => o.setName('filter').setDescription('Filter info').setRequired(false)
       .addChoices(...serverInfoFields.map(f => ({ name: f, value: f })))),
-  new SlashCommandBuilder().setName('generateimage').setDescription('Generate an image from a prompt')
-    .addStringOption(o => o.setName('prompt').setDescription('Describe the image').setRequired(true))
+  new SlashCommandBuilder().setName('generateimage').setDescription('Simulate an AI image generation')
+    .addStringOption(o => o.setName('prompt').setDescription('What should the image depict?').setRequired(true))
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
@@ -116,45 +116,43 @@ client.on('messageCreate', async message => {
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  const { commandName, options } = interaction;
+  const { commandName, user, options } = interaction;
 
   if (commandName === 'generateimage') {
     try {
       await interaction.deferReply();
       const prompt = options.getString('prompt');
 
-      const res = await axios.post(
-        'https://openrouter.ai/api/v1/images/generations',
-        {
-          model: 'openai/dall-e-3',
-          prompt: prompt,
-          n: 1,
-          size: '1024x1024'
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-            'Content-Type': 'application/json'
+      const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
+        model: 'midjourney/mj-v5',
+        messages: [
+          {
+            role: 'user',
+            content: `You are a text-to-image model. Based on this prompt, describe in vivid detail what the generated image would look like:\n"${prompt}"`
           }
+        ]
+      }, {
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
         }
-      );
+      });
 
-      const imageUrl = res.data?.data?.[0]?.url;
-      if (!imageUrl) return interaction.editReply('⚠️ No image returned.');
-      return interaction.editReply({ content: `🖼️ Image for: **${prompt}**`, files: [imageUrl] });
+      const description = res.data.choices?.[0]?.message?.content;
+
+      if (!description) {
+        return interaction.editReply('⚠️ No description returned.');
+      }
+
+      return interaction.editReply(`🖼️ **Simulated AI Image Description:**\n${description}`);
 
     } catch (err) {
-      console.error('❌ DALL·E image error:', err.response?.data || err.message);
-      if (interaction.deferred || interaction.replied) {
-        return interaction.editReply('❌ Failed to generate image.');
-      } else {
-        return interaction.reply('❌ Failed to generate image.');
-      }
+      console.error('❌ Error simulating image:', err.response?.data || err.message);
+      return interaction.editReply('❌ Failed to simulate image generation.');
     }
   }
 
-  // Other commands here: savecords, privatecords, publiccords, playersjoined, serverinfo
-  // (Omitted here for brevity — keep them unchanged in your working code)
+  // Other commands unchanged...
 });
 
 client.once('ready', () => {
