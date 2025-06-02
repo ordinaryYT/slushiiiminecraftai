@@ -4,7 +4,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const axios = require('axios');
 
-const { Player, Extractors } = require('discord-player');
+const { Player } = require('discord-player');
 
 const app = express();
 app.get('/', (req, res) => res.send('Bot is running'));
@@ -15,7 +15,7 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates, // Needed for voice
+    GatewayIntentBits.GuildVoiceStates, // needed for voice (music)
   ]
 });
 
@@ -55,7 +55,7 @@ const serverInfoFields = [
   'edition', 'software', 'plugins', 'motd', 'retrieved_at', 'expires_at', 'eula_blocked'
 ];
 
-// Define slash commands
+// --- Define slash commands ---
 const commands = [
   new SlashCommandBuilder().setName('savecords').setDescription('Save coordinates')
     .addStringOption(o => o.setName('name').setDescription('Name').setRequired(true))
@@ -71,7 +71,7 @@ const commands = [
   new SlashCommandBuilder().setName('serverinfo').setDescription('Get Minecraft server info')
     .addStringOption(o => o.setName('filter').setDescription('Filter info').setRequired(false)
       .addChoices(...serverInfoFields.map(f => ({ name: f, value: f })))),
-  // Music commands
+  // Music commands:
   new SlashCommandBuilder().setName('join').setDescription('Join your voice channel'),
   new SlashCommandBuilder().setName('leave').setDescription('Leave voice channel and stop music'),
   new SlashCommandBuilder().setName('play').setDescription('Play a song from YouTube or URL')
@@ -87,15 +87,12 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
   await initDb();
 })();
 
-// Initialize the music player
+// Initialize the music player WITHOUT calling any deprecated extractor load
 const player = new Player(client);
-
-(async () => {
-  await Extractors.loadMulti();
-})();
 
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
+  const content = message.content.toLowerCase();
 
   // AI via mention
   if (message.mentions.has(client.user)) {
@@ -119,8 +116,7 @@ client.on('messageCreate', async message => {
     }
   }
 
-  // Server info replies on certain keywords
-  const content = message.content.toLowerCase();
+  // Reply with server join info
   if (content.includes('how do i join') || content.includes('how to join') || content.includes('join server')) {
     return message.reply(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**IP:** 87.106.101.66\n**Port:** 6367`);
   }
@@ -134,10 +130,9 @@ client.on('messageCreate', async message => {
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-
   const { commandName, user, options, member, guild } = interaction;
 
-  // Coordinates
+  // Coordinate commands
   if (commandName === 'savecords') {
     await interaction.deferReply({ ephemeral: true });
     const name = options.getString('name');
@@ -146,8 +141,8 @@ client.on('interactionCreate', async interaction => {
     const z = options.getInteger('z');
     const description = options.getString('description') || 'No description';
     const visibility = options.getString('visibility');
-
-    await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [user.id, name, x, y, z, description, visibility]);
     return interaction.editReply(`✅ Saved **${name}** as **${visibility}**.`);
   }
@@ -180,96 +175,110 @@ client.on('interactionCreate', async interaction => {
     const filter = options.getString('filter');
     try {
       const { data } = await axios.get('https://mcstatus.io/api/v2/status/java/87.106.101.66:6367');
-      if (!data) return interaction.editReply('❌ Server info not available.');
+      const info = data?.players ? data : null;
+      if (!info) return interaction.editReply('❌ Server info not available.');
 
       if (filter) {
-        if (!(filter in data)) return interaction.editReply(`❌ No data for filter: ${filter}`);
-        return interaction.editReply(`**${filter}**: ${JSON.stringify(data[filter], null, 2)}`);
+        if (!(filter in info)) return interaction.editReply(`❌ No data for filter: ${filter}`);
+        return interaction.editReply(`**${filter}**: ${JSON.stringify(info[filter], null, 2)}`);
       }
 
+      // Show basic info embed
       const embed = new EmbedBuilder()
         .setTitle('Minecraft Server Info')
-        .setDescription('Status for SlxshyNationCraft')
-        .setColor(data.online ? 'Green' : 'Red')
+        .setDescription(`Status for SlxshyNationCraft`)
+        .setColor(info.online ? 0x00ff00 : 0xff0000)
         .addFields(
-          { name: 'Online', value: String(data.online), inline: true },
-          { name: 'Players Online', value: data.players?.online?.toString() || '0', inline: true },
-          { name: 'Version', value: data.version?.name || 'Unknown', inline: true },
-          { name: 'MOTD', value: data.motd?.clean || 'N/A' }
+          { name: 'Online', value: info.online ? 'Yes' : 'No', inline: true },
+          { name: 'Version', value: info.version || 'Unknown', inline: true },
+          { name: 'Players', value: `${info.players?.online ?? 0} / ${info.players?.max ?? 0}`, inline: true },
+          { name: 'MOTD', value: info.motd?.clean || 'N/A' }
         )
         .setTimestamp();
-
       return interaction.editReply({ embeds: [embed] });
-    } catch {
+    } catch (err) {
+      console.error('Server info error:', err);
       return interaction.editReply('❌ Failed to fetch server info.');
     }
   }
 
   // Music commands
   if (commandName === 'join') {
-    if (!member.voice.channel) return interaction.reply({ content: '❌ You must be in a voice channel!', ephemeral: true });
-    const queue = player.nodes.get(interaction.guildId) || player.nodes.create(interaction.guild, { metadata: { channel: interaction.channel } });
+    if (!member.voice.channel) return interaction.reply('❌ You need to join a voice channel first!');
     try {
-      await queue.connect(member.voice.channel);
+      await player.voiceUtils.joinVoiceChannel({
+        channelId: member.voice.channel.id,
+        guildId: guild.id,
+        adapterCreator: guild.voiceAdapterCreator,
+      });
       return interaction.reply('✅ Joined your voice channel!');
     } catch {
-      return interaction.reply('❌ Failed to join voice channel.');
+      return interaction.reply('❌ Failed to join your voice channel.');
     }
   }
 
   if (commandName === 'leave') {
-    const queue = player.nodes.get(interaction.guildId);
-    if (!queue) return interaction.reply('❌ Not connected to a voice channel.');
-    queue.destroy();
-    return interaction.reply('👋 Left the voice channel and stopped playback.');
+    const queue = player.getQueue(guild.id);
+    if (queue) queue.destroy();
+    await player.voiceUtils.leaveVoiceChannel(guild.id);
+    return interaction.reply('✅ Left the voice channel and stopped music.');
   }
 
   if (commandName === 'play') {
     const query = options.getString('query');
-    if (!member.voice.channel) return interaction.reply({ content: '❌ You must be in a voice channel!', ephemeral: true });
-
-    const queue = player.nodes.get(interaction.guildId) || player.nodes.create(interaction.guild, { metadata: { channel: interaction.channel } });
+    if (!member.voice.channel) return interaction.reply('❌ You need to join a voice channel first!');
+    let queue = player.getQueue(guild.id);
+    if (!queue) {
+      queue = player.createQueue(guild, {
+        metadata: {
+          channel: interaction.channel,
+          requestedBy: user,
+        }
+      });
+      try {
+        await queue.connect(member.voice.channel);
+      } catch {
+        player.deleteQueue(guild.id);
+        return interaction.reply('❌ Could not join your voice channel!');
+      }
+    }
     try {
-      if (!queue.connection) await queue.connect(member.voice.channel);
-
-      const track = await queue.search(query, { requestedBy: member.user }).then(x => x.tracks[0]);
+      const track = await player.search(query, { requestedBy: user }).then(x => x.tracks[0]);
       if (!track) return interaction.reply('❌ No results found.');
-
-      queue.addTrack(track);
-      if (!queue.isPlaying()) await queue.node.play();
-
-      return interaction.reply(`▶️ Added **${track.title}** to the queue!`);
-    } catch (error) {
-      console.error(error);
-      return interaction.reply('❌ Error playing track.');
+      await queue.addTrack(track);
+      if (!queue.playing) await queue.play();
+      return interaction.reply(`▶️ Enqueued **${track.title}**`);
+    } catch (e) {
+      console.error(e);
+      return interaction.reply('❌ Error while trying to play the track.');
     }
   }
 
   if (commandName === 'skip') {
-    const queue = player.nodes.get(interaction.guildId);
-    if (!queue || !queue.isPlaying()) return interaction.reply('❌ No music playing.');
-    const currentTrack = queue.currentTrack;
-    queue.node.skip();
-    return interaction.reply(`⏭ Skipped **${currentTrack.title}**.`);
+    const queue = player.getQueue(guild.id);
+    if (!queue || !queue.playing) return interaction.reply('❌ No music playing.');
+    const current = queue.current;
+    queue.skip();
+    return interaction.reply(`⏭ Skipped **${current.title}**`);
   }
 
   if (commandName === 'stop') {
-    const queue = player.nodes.get(interaction.guildId);
-    if (!queue || !queue.isPlaying()) return interaction.reply('❌ No music playing.');
-    queue.delete();
-    return interaction.reply('⏹ Stopped playback and cleared queue.');
+    const queue = player.getQueue(guild.id);
+    if (!queue || !queue.playing) return interaction.reply('❌ No music playing.');
+    queue.destroy();
+    return interaction.reply('⏹ Stopped playback and cleared the queue.');
   }
 
   if (commandName === 'queue') {
-    const queue = player.nodes.get(interaction.guildId);
-    if (!queue || !queue.isPlaying()) return interaction.reply('❌ No music playing.');
-    const tracks = queue.tracks.slice(0, 10).map((t, i) => `${i + 1}. ${t.title} (requested by ${t.requestedBy.username})`).join('\n');
-    return interaction.reply(`🎶 Current queue:\n${tracks || 'No upcoming tracks.'}`);
+    const queue = player.getQueue(guild.id);
+    if (!queue || !queue.playing) return interaction.reply('❌ No music playing.');
+    const tracks = queue.tracks.slice(0, 10).map((t, i) => `${i + 1}. ${t.title} - Requested by ${t.requestedBy.username}`);
+    return interaction.reply(`🎶 Current Queue:\n${tracks.join('\n')}`);
   }
 });
 
 client.once('ready', () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(`✅ Logged in as ${client.user.tag}!`);
 });
 
 client.login(DISCORD_BOT_TOKEN);
