@@ -82,7 +82,6 @@ client.on('messageCreate', async message => {
   if (message.author.bot) return;
   const content = message.content.toLowerCase();
 
-  // AI Chat via @mention using openai/gpt-3.5-turbo
   if (message.mentions.has(client.user)) {
     const prompt = message.content.replace(/<@!?\d+>/, '').trim();
     if (!prompt) return message.reply('❌ You must say something.');
@@ -104,12 +103,11 @@ client.on('messageCreate', async message => {
     }
   }
 
-  // Join replies
   if (content.includes('how do i join') || content.includes('how to join') || content.includes('join server')) {
     return message.reply(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**IP:** 87.106.101.66\n**Port:** 6367`);
   }
   if (content.includes('switch') || content.includes('console') || content.includes('xbox') || content.includes('ps4') || content.includes('ps5') || content.includes('phone') || content.includes('mobile')) {
-    return message.reply(`📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab (or Worlds tab in new UI) → Join via LAN.`);
+    return message.reply(`📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab → Join via LAN.`);
   }
   if (content.includes('java')) {
     return message.reply(`💻 **Java Edition Notice**:\nSlxshyNationCraft is a **Bedrock-only** server.\nJava Edition players can’t join — sorry!`);
@@ -185,7 +183,7 @@ client.on('interactionCreate', async interaction => {
 
     try {
       const res = await axios.post('https://openrouter.ai/api/v1/images/generations', {
-        model: 'stability-ai/sdxl',
+        model: 'stability-ai/sdxl-turbo',
         prompt: prompt,
         n: 1,
         size: '1024x1024'
