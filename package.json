@@ -1,7 +1,7 @@
 {
   "name": "discord-ai-bot",
   "version": "1.0.0",
-  "description": "A Discord bot using OpenRouter AI and PostgreSQL for coordinate storage on Render with music features",
+  "description": "A Discord bot using OpenRouter AI and PostgreSQL for coordinate storage on Render",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -23,8 +23,8 @@
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "pg": "^8.11.3",
-    "discord-player": "^6.4.0",
-    "@discord-player/extractor": "^6.4.0",
+    "discord-player": "^7.1.0",
+    "@discord-player/extractor": "^7.1.0",
     "@discordjs/voice": "^0.18.0",
     "@discordjs/opus": "^0.9.0",
     "ffmpeg-static": "^5.1.0"
