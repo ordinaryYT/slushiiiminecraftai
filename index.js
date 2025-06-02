@@ -1,4 +1,4 @@
-i still want everything on here // Clean full bot code with @mention AI, all commands, logs, and join replies
+// Clean full bot code with @mention AI, all commands, logs, and join replies
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
