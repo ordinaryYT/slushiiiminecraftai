@@ -214,7 +214,7 @@ client.once('ready', async () => {
 
   const grassChannel = await client.channels.fetch(GRASS_CHANNEL_ID);
   await postOrUpdateGrassMessage(grassChannel);
-  setInterval(() => postOrUpdateGrassMessage(grassChannel), 1000); // Optional: 1s update
+  setInterval(() => postOrUpdateGrassMessage(grassChannel), 30000); // Optional: 1s update
 });
 
 client.login(DISCORD_BOT_TOKEN);
