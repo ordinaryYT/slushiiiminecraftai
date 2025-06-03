@@ -110,7 +110,6 @@ client.on('interactionCreate', async interaction => {
   }
 
   if (!interaction.isChatInputCommand()) return;
-
   const { commandName, user, options } = interaction;
 
   if (commandName === 'savecords') {
@@ -145,9 +144,10 @@ client.on('interactionCreate', async interaction => {
   }
 
   if (commandName === 'grassleaderboard') {
+    await interaction.deferReply();
     const res = await db.query(`SELECT username, total_grass FROM grass_stats ORDER BY total_grass DESC LIMIT 10`);
     const leaderboard = res.rows.map((r, i) => `#${i + 1} — **${r.username}**: ${r.total_grass} 🌿`).join('\n');
-    return interaction.reply({ content: leaderboard });
+    return interaction.editReply({ content: leaderboard });
   }
 });
 
@@ -175,7 +175,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
       if (duration >= 30) {
         const multiplier = (!session.muted && !session.deafened) ? 2 : 1;
         const grass = Math.floor(duration * multiplier);
-
         await db.query(`
           INSERT INTO grass_stats (user_id, username, total_grass)
           VALUES ($1, $2, $3)
@@ -210,11 +209,11 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
 
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  await client.application.commands.fetch(); // 👈 THIS FIXES THE NON-RESPONSIVE SLASH COMMAND ISSUE
+  await client.application.commands.fetch(); // required fix
 
   const grassChannel = await client.channels.fetch(GRASS_CHANNEL_ID);
   await postOrUpdateGrassMessage(grassChannel);
-  setInterval(() => postOrUpdateGrassMessage(grassChannel), 1000); // Optional: 1s update
+  setInterval(() => postOrUpdateGrassMessage(grassChannel), 1000);
 });
 
 client.login(DISCORD_BOT_TOKEN);
