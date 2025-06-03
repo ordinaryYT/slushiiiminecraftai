@@ -74,7 +74,7 @@ async function postOrUpdateGrassMessage(channel) {
       `🔊 There are currently **${activeUsers}** people in voice channel, come with them to touch grass automatically!`
     )
     .setColor(0x57F287)
-    .setFooter({ text: 'There’s so much new things that will coming! Stay tuned !' });
+    .setFooter({ text: 'There is new things comming soon 😄!' });
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('manual_grass').setStyle(ButtonStyle.Success).setEmoji('🌱').setLabel('Touch grass'),
