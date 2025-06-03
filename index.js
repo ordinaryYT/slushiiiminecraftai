@@ -1,15 +1,5 @@
 require('dotenv').config();
-const {
-  Client,
-  GatewayIntentBits,
-  REST,
-  Routes,
-  SlashCommandBuilder,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle
-} = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
 const { Pool } = require('pg');
 const axios = require('axios');
@@ -18,7 +8,6 @@ const app = express();
 app.get('/', (req, res) => res.send('Bot is running'));
 app.listen(process.env.PORT || 3000);
 
-// Client init
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -28,7 +17,6 @@ const client = new Client({
   ]
 });
 
-// ENV variables
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
@@ -39,14 +27,12 @@ const GRASS_CHANNEL_ID = process.env.GRASS_CHANNEL_ID;
 const db = new Pool({ connectionString: DATABASE_URL });
 let lastGrassMessageId = null;
 
-// Init DB
 const initDb = async () => {
   await db.query(`CREATE TABLE IF NOT EXISTS joined_players (
     id SERIAL PRIMARY KEY,
     name TEXT UNIQUE,
     first_seen TIMESTAMPTZ DEFAULT NOW()
   )`);
-
   await db.query(`CREATE TABLE IF NOT EXISTS cords (
     id SERIAL PRIMARY KEY,
     user_id TEXT,
@@ -58,7 +44,6 @@ const initDb = async () => {
     visibility TEXT CHECK (visibility IN ('public', 'private')),
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
-
   await db.query(`CREATE TABLE IF NOT EXISTS grass_stats (
     user_id TEXT PRIMARY KEY,
     username TEXT,
@@ -67,7 +52,6 @@ const initDb = async () => {
   )`);
 };
 
-// Auto embed post/update
 async function postOrUpdateGrassMessage(channel) {
   const stats = await db.query('SELECT SUM(total_grass) as total, COUNT(*) as users FROM grass_stats');
   const total = stats.rows[0]?.total || 0;
@@ -103,7 +87,6 @@ async function postOrUpdateGrassMessage(channel) {
   }
 }
 
-// Interaction handler
 client.on('interactionCreate', async interaction => {
   if (interaction.isButton()) {
     const { customId, user } = interaction;
@@ -168,7 +151,6 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// Voice session tracker
 const voiceStates = new Map();
 client.on('voiceStateUpdate', async (oldState, newState) => {
   const userId = newState.id;
@@ -206,32 +188,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
   }
 });
 
-// AI reply via mention
-client.on('messageCreate', async message => {
-  if (message.author.bot) return;
-  if (message.mentions.has(client.user)) {
-    const prompt = message.content.replace(/<@!?\d+>/, '').trim();
-    if (!prompt) return message.reply('❌ You must say something.');
-    try {
-      const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model: 'openai/gpt-3.5-turbo',
-        messages: [{ role: 'user', content: prompt }]
-      }, {
-        headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      const reply = res.data.choices[0]?.message?.content || '⚠️ No response.';
-      return message.reply(reply);
-    } catch (err) {
-      console.error('❌ AI Error:', err);
-      return message.reply('❌ Failed to contact AI.');
-    }
-  }
-});
-
-// Slash commands
 const commands = [
   new SlashCommandBuilder().setName('savecords').setDescription('Save coordinates')
     .addStringOption(o => o.setName('name').setDescription('Name').setRequired(true))
@@ -246,7 +202,6 @@ const commands = [
   new SlashCommandBuilder().setName('grassleaderboard').setDescription('Show top grass touchers')
 ].map(c => c.toJSON());
 
-// Register commands and init
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
 (async () => {
   await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
@@ -255,10 +210,11 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
 
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  await client.application.commands.fetch(); // Ensures commands work immediately
+  await client.application.commands.fetch(); // 👈 THIS FIXES THE NON-RESPONSIVE SLASH COMMAND ISSUE
+
   const grassChannel = await client.channels.fetch(GRASS_CHANNEL_ID);
   await postOrUpdateGrassMessage(grassChannel);
-  setInterval(() => postOrUpdateGrassMessage(grassChannel), 1000);
+  setInterval(() => postOrUpdateGrassMessage(grassChannel), 1000); // Optional: 1s update
 });
 
 client.login(DISCORD_BOT_TOKEN);
