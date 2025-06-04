@@ -23,7 +23,7 @@ const GUILD_ID = process.env.GUILD_ID;
 const DATABASE_URL = process.env.DATABASE_URL;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const LOG_CHANNEL_ID = '1377938133341180016';
-const TEAMS_CHANNEL_ID = 'YOUR_TEAMS_CHANNEL_ID'; // replace with actual channel ID
+const TEAMS_CHANNEL_ID = '1373394760735133706'; // replace with actual channel ID
 
 const db = new Pool({ connectionString: DATABASE_URL });
 
