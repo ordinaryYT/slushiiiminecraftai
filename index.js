@@ -1,4 +1,3 @@
-// Clean full bot code with @mention AI, all commands, logs, and join replies
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
 const express = require('express');
@@ -68,7 +67,9 @@ const commands = [
   new SlashCommandBuilder().setName('playersjoined').setDescription('List all players that joined'),
   new SlashCommandBuilder().setName('serverinfo').setDescription('Get Minecraft server info')
     .addStringOption(o => o.setName('filter').setDescription('Filter info').setRequired(false)
-      .addChoices(...serverInfoFields.map(f => ({ name: f, value: f }))))
+      .addChoices(...serverInfoFields.map(f => ({ name: f, value: f })))),
+  new SlashCommandBuilder().setName('genimage').setDescription('Generate an image from a prompt')
+    .addStringOption(o => o.setName('prompt').setDescription('What should the image show?').setRequired(true))
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
@@ -81,7 +82,6 @@ client.on('messageCreate', async message => {
   if (message.author.bot) return;
   const content = message.content.toLowerCase();
 
-  // AI via mention
   if (message.mentions.has(client.user)) {
     const prompt = message.content.replace(/<@!?\d+>/, '').trim();
     if (!prompt) return message.reply('❌ You must say something.');
@@ -103,7 +103,6 @@ client.on('messageCreate', async message => {
     }
   }
 
-  // Join replies
   if (content.includes('how do i join') || content.includes('how to join') || content.includes('join server')) {
     return message.reply(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**IP:** 87.106.101.66\n**Port:** 6367`);
   }
@@ -175,6 +174,34 @@ client.on('interactionCreate', async interaction => {
     } catch (err) {
       console.error(err);
       return interaction.editReply('❌ Failed to fetch server info.');
+    }
+  }
+
+  if (commandName === 'genimage') {
+    await interaction.deferReply();
+    const prompt = options.getString('prompt');
+    try {
+      const res = await axios.post('https://openrouter.ai/api/v1/images/generations', {
+        model: 'openai/dall-e-3',
+        prompt: prompt,
+        n: 1,
+        size: '1024x1024'
+      }, {
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const imageUrl = res.data?.data?.[0]?.url;
+      if (imageUrl) {
+        return interaction.editReply({ content: `🖼️ Image generated for: "${prompt}"`, files: [imageUrl] });
+      } else {
+        return interaction.editReply('⚠️ Failed to generate image.');
+      }
+    } catch (err) {
+      console.error('❌ Image generation error:', err);
+      return interaction.editReply('❌ Failed to generate image.');
     }
   }
 });
