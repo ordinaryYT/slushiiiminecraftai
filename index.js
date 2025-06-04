@@ -9,11 +9,7 @@ app.get('/', (req, res) => res.send('Bot is running'));
 app.listen(process.env.PORT || 3000);
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
 const {
@@ -21,7 +17,8 @@ const {
   CLIENT_ID,
   GUILD_ID,
   DATABASE_URL,
-  OPENROUTER_API_KEY
+  OPENROUTER_API_KEY,
+  HUGGINGFACE_TOKEN
 } = process.env;
 
 const db = new Pool({ connectionString: DATABASE_URL });
@@ -79,90 +76,76 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
   await initDb();
 })();
 
-client.on('messageCreate', async message => {
-  if (message.author.bot) return;
-  const content = message.content.toLowerCase();
-
-  if (message.mentions.has(client.user)) {
-    const prompt = message.content.replace(/<@!?\d+>/, '').trim();
-    if (!prompt) return message.reply('❌ You must say something.');
-    try {
-      const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model: 'openai/gpt-3.5-turbo',
-        messages: [{ role: 'user', content: prompt }]
-      }, {
-        headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      const reply = res.data.choices[0]?.message?.content || '⚠️ No response.';
-      return message.reply(reply);
-    } catch (err) {
-      console.error('❌ AI Error:', err);
-      return message.reply('❌ Failed to contact AI.');
-    }
-  }
-
-  if (content.includes('how do i join') || content.includes('how to join') || content.includes('join server')) {
-    return message.reply(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**IP:** 87.106.101.66\n**Port:** 6367`);
-  }
-
-  if (content.includes('switch') || content.includes('console') || content.includes('xbox') || content.includes('ps4') || content.includes('ps5') || content.includes('phone') || content.includes('mobile')) {
-    return message.reply(`📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab → Join via LAN.`);
-  }
-
-  if (content.includes('java')) {
-    return message.reply(`💻 **Java Edition Notice**:\nSlxshyNationCraft is a **Bedrock-only** server.\nJava Edition players can’t join — sorry!`);
-  }
-});
-
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  const { commandName, user, options } = interaction;
 
-  if (commandName === 'savecords') {
-    await interaction.deferReply({ ephemeral: true });
-    const name = options.getString('name');
-    const x = options.getInteger('x');
-    const y = options.getInteger('y');
-    const z = options.getInteger('z');
-    const description = options.getString('description') || 'No description';
-    const visibility = options.getString('visibility');
+  try {
+    const { commandName, options, user } = interaction;
 
-    await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [user.id, name, x, y, z, description, visibility]);
+    if (commandName === 'genimage') {
+      await interaction.deferReply();
+      const prompt = options.getString('prompt');
 
-    return interaction.editReply(`✅ Saved **${name}** as **${visibility}**.`);
-  }
+      const response = await axios.post(
+        'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2',
+        { inputs: prompt },
+        {
+          headers: {
+            Authorization: `Bearer ${HUGGINGFACE_TOKEN}`,
+            Accept: 'application/json'
+          },
+          responseType: 'arraybuffer'
+        }
+      );
 
-  if (commandName === 'privatecords') {
-    await interaction.deferReply({ ephemeral: true });
-    const res = await db.query(`SELECT * FROM cords WHERE user_id = $1 AND visibility = 'private'`, [user.id]);
-    if (!res.rows.length) return interaction.editReply('📭 No private coordinates.');
-    const list = res.rows.map(r => `📍 **${r.name}** (${r.x},${r.y},${r.z})\n📝 ${r.description}`).join('\n\n');
-    return interaction.editReply({ content: list });
-  }
+      const imageBuffer = Buffer.from(response.data, 'binary');
+      return interaction.editReply({
+        content: `🖼️ Image generated for: "${prompt}"`,
+        files: [{ attachment: imageBuffer, name: 'image.png' }]
+      });
+    }
 
-  if (commandName === 'publiccords') {
-    await interaction.deferReply();
-    const res = await db.query(`SELECT * FROM cords WHERE visibility = 'public' ORDER BY created_at DESC LIMIT 10`);
-    if (!res.rows.length) return interaction.editReply('📭 No public coordinates.');
-    const list = res.rows.map(r => `📍 **${r.name}** (${r.x},${r.y},${r.z})\n📝 ${r.description}`).join('\n\n');
-    return interaction.editReply({ content: list });
-  }
+    if (commandName === 'savecords') {
+      await interaction.deferReply({ ephemeral: true });
+      const name = options.getString('name');
+      const x = options.getInteger('x');
+      const y = options.getInteger('y');
+      const z = options.getInteger('z');
+      const description = options.getString('description') || 'No description';
+      const visibility = options.getString('visibility');
 
-  if (commandName === 'playersjoined') {
-    const res = await db.query(`SELECT name, first_seen FROM joined_players ORDER BY first_seen ASC`);
-    if (!res.rows.length) return interaction.reply('📭 No player records.');
-    const list = res.rows.map(r => `👤 ${r.name} - ${new Date(r.first_seen).toLocaleDateString()}`).join('\n');
-    return interaction.reply({ content: list });
-  }
+      await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility)
+                      VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [user.id, name, x, y, z, description, visibility]);
 
-  if (commandName === 'serverinfo') {
-    await interaction.deferReply();
-    try {
+      return interaction.editReply(`✅ Saved **${name}** as **${visibility}**.`);
+    }
+
+    if (commandName === 'privatecords') {
+      await interaction.deferReply({ ephemeral: true });
+      const res = await db.query(`SELECT * FROM cords WHERE user_id = $1 AND visibility = 'private'`, [user.id]);
+      if (!res.rows.length) return interaction.editReply('📭 No private coordinates.');
+      const list = res.rows.map(r => `📍 **${r.name}** (${r.x},${r.y},${r.z})\n📝 ${r.description}`).join('\n\n');
+      return interaction.editReply({ content: list });
+    }
+
+    if (commandName === 'publiccords') {
+      await interaction.deferReply();
+      const res = await db.query(`SELECT * FROM cords WHERE visibility = 'public' ORDER BY created_at DESC LIMIT 10`);
+      if (!res.rows.length) return interaction.editReply('📭 No public coordinates.');
+      const list = res.rows.map(r => `📍 **${r.name}** (${r.x},${r.y},${r.z})\n📝 ${r.description}`).join('\n\n');
+      return interaction.editReply({ content: list });
+    }
+
+    if (commandName === 'playersjoined') {
+      const res = await db.query(`SELECT name, first_seen FROM joined_players ORDER BY first_seen ASC`);
+      if (!res.rows.length) return interaction.reply('📭 No player records.');
+      const list = res.rows.map(r => `👤 ${r.name} - ${new Date(r.first_seen).toLocaleDateString()}`).join('\n');
+      return interaction.reply({ content: list });
+    }
+
+    if (commandName === 'serverinfo') {
+      await interaction.deferReply();
       const res = await axios.get('https://api.mcstatus.io/v2/status/bedrock/87.106.101.66:6367');
       const data = res.data;
       const filter = options.getString('filter');
@@ -174,35 +157,14 @@ client.on('interactionCreate', async interaction => {
         fields: serverInfoFields.map(f => ({ name: f, value: String(data[f] || 'N/A'), inline: true }))
       };
       return interaction.editReply({ embeds: [embed] });
-    } catch (err) {
-      console.error(err);
-      return interaction.editReply('❌ Failed to fetch server info.');
     }
-  }
 
-  if (commandName === 'genimage') {
-    await interaction.deferReply();
-    const prompt = options.getString('prompt');
-
-    try {
-      const response = await axios.post(
-        'https://raphael.app/api/generate',
-        { prompt },
-        { headers: { 'Content-Type': 'application/json' } }
-      );
-
-      const imageUrl = response.data?.image_url;
-      if (imageUrl) {
-        return interaction.editReply({
-          content: `🖼️ Image generated for: "${prompt}"`,
-          files: [imageUrl]
-        });
-      } else {
-        return interaction.editReply('⚠️ No image generated. Try again.');
-      }
-    } catch (err) {
-      console.error('❌ Raphael AI error:', err.response?.data || err.message);
-      return interaction.editReply('❌ Failed to generate image. Try again later.');
+  } catch (err) {
+    console.error('❌ Interaction error:', err);
+    if (interaction.deferred || interaction.replied) {
+      interaction.editReply('❌ Something went wrong.');
+    } else {
+      interaction.reply({ content: '❌ Something went wrong.', ephemeral: true });
     }
   }
 });
