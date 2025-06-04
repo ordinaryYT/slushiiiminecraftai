@@ -17,7 +17,6 @@ const {
   CLIENT_ID,
   GUILD_ID,
   DATABASE_URL,
-  OPENROUTER_API_KEY,
   HUGGINGFACE_TOKEN
 } = process.env;
 
@@ -86,23 +85,39 @@ client.on('interactionCreate', async interaction => {
       await interaction.deferReply();
       const prompt = options.getString('prompt');
 
-      const response = await axios.post(
-        'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2',
-        { inputs: prompt },
-        {
-          headers: {
-            Authorization: `Bearer ${HUGGINGFACE_TOKEN}`,
-            Accept: 'application/json'
-          },
-          responseType: 'arraybuffer'
-        }
-      );
+      try {
+        const response = await axios.post(
+          'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2',
+          { inputs: prompt },
+          {
+            headers: {
+              Authorization: `Bearer ${HUGGINGFACE_TOKEN}`,
+              Accept: 'application/json'
+            },
+            responseType: 'arraybuffer'
+          }
+        );
 
-      const imageBuffer = Buffer.from(response.data, 'binary');
-      return interaction.editReply({
-        content: `🖼️ Image generated for: "${prompt}"`,
-        files: [{ attachment: imageBuffer, name: 'image.png' }]
-      });
+        const contentType = response.headers['content-type'];
+
+        if (contentType.includes('application/json')) {
+          const jsonResponse = JSON.parse(Buffer.from(response.data).toString('utf8'));
+          if (jsonResponse.error && jsonResponse.error.includes('loading')) {
+            return interaction.editReply('⏳ The model is currently loading. Please try again in a few moments.');
+          } else {
+            return interaction.editReply(`❌ Error: ${jsonResponse.error || 'Unknown error occurred.'}`);
+          }
+        }
+
+        const imageBuffer = Buffer.from(response.data, 'binary');
+        return interaction.editReply({
+          content: `🖼️ Image generated for: "${prompt}"`,
+          files: [{ attachment: imageBuffer, name: 'image.png' }]
+        });
+      } catch (apiError) {
+        console.error('Error generating image:', apiError);
+        return interaction.editReply('❌ Failed to generate image. Please try again later.');
+      }
     }
 
     if (commandName === 'savecords') {
