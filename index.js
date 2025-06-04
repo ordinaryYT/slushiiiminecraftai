@@ -16,13 +16,13 @@ const client = new Client({
   ]
 });
 
-const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = process.env.GUILD_ID;
-const DATABASE_URL = process.env.DATABASE_URL;
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const DEEPAI_API_KEY = process.env.DEEPAI_API_KEY;
-const LOG_CHANNEL_ID = '1377938133341180016';
+const {
+  DISCORD_BOT_TOKEN,
+  CLIENT_ID,
+  GUILD_ID,
+  DATABASE_URL,
+  OPENROUTER_API_KEY
+} = process.env;
 
 const db = new Pool({ connectionString: DATABASE_URL });
 
@@ -107,9 +107,11 @@ client.on('messageCreate', async message => {
   if (content.includes('how do i join') || content.includes('how to join') || content.includes('join server')) {
     return message.reply(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**IP:** 87.106.101.66\n**Port:** 6367`);
   }
+
   if (content.includes('switch') || content.includes('console') || content.includes('xbox') || content.includes('ps4') || content.includes('ps5') || content.includes('phone') || content.includes('mobile')) {
-    return message.reply(`📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab (or Worlds tab in new UI) → Join via LAN.`);
+    return message.reply(`📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab → Join via LAN.`);
   }
+
   if (content.includes('java')) {
     return message.reply(`💻 **Java Edition Notice**:\nSlxshyNationCraft is a **Bedrock-only** server.\nJava Edition players can’t join — sorry!`);
   }
@@ -121,17 +123,17 @@ client.on('interactionCreate', async interaction => {
 
   if (commandName === 'savecords') {
     await interaction.deferReply({ ephemeral: true });
-    const { name, x, y, z, description, visibility } = {
-      name: options.getString('name'),
-      x: options.getInteger('x'),
-      y: options.getInteger('y'),
-      z: options.getInteger('z'),
-      description: options.getString('description') || 'No description',
-      visibility: options.getString('visibility')
-    };
+    const name = options.getString('name');
+    const x = options.getInteger('x');
+    const y = options.getInteger('y');
+    const z = options.getInteger('z');
+    const description = options.getString('description') || 'No description';
+    const visibility = options.getString('visibility');
+
     await db.query(`INSERT INTO cords (user_id, name, x, y, z, description, visibility)
                     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
       [user.id, name, x, y, z, description, visibility]);
+
     return interaction.editReply(`✅ Saved **${name}** as **${visibility}**.`);
   }
 
@@ -184,28 +186,23 @@ client.on('interactionCreate', async interaction => {
 
     try {
       const response = await axios.post(
-        'https://api.deepai.org/api/stable-diffusion',
-        new URLSearchParams({ text: prompt }),
-        {
-          headers: {
-            'Api-Key': DEEPAI_API_KEY,
-            'Content-Type': 'application/x-www-form-urlencoded'
-          }
-        }
+        'https://raphael.app/api/generate',
+        { prompt },
+        { headers: { 'Content-Type': 'application/json' } }
       );
 
-      const imageUrl = response.data.output_url;
+      const imageUrl = response.data?.image_url;
       if (imageUrl) {
         return interaction.editReply({
           content: `🖼️ Image generated for: "${prompt}"`,
           files: [imageUrl]
         });
       } else {
-        return interaction.editReply('⚠️ No image was generated.');
+        return interaction.editReply('⚠️ No image generated. Try again.');
       }
-    } catch (error) {
-      console.error('❌ DeepAI Error:', error.response?.data || error.message);
-      return interaction.editReply('❌ Failed to generate image. Please check your API key.');
+    } catch (err) {
+      console.error('❌ Raphael AI error:', err.response?.data || err.message);
+      return interaction.editReply('❌ Failed to generate image. Try again later.');
     }
   }
 });
