@@ -87,7 +87,7 @@ client.on('messageCreate', async message => {
     if (!prompt) return message.reply('❌ You must say something.');
     try {
       const res = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-        model: 'openai/gpt-3.5-turbo',
+        model: 'shisa/shisa-v2-llama3.3-70b',
         messages: [{ role: 'user', content: prompt }]
       }, {
         headers: {
