@@ -21,6 +21,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const DATABASE_URL = process.env.DATABASE_URL;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const DEEPAI_API_KEY = process.env.DEEPAI_API_KEY;
 const LOG_CHANNEL_ID = '1377938133341180016';
 
 const db = new Pool({ connectionString: DATABASE_URL });
@@ -69,7 +70,7 @@ const commands = [
     .addStringOption(o => o.setName('filter').setDescription('Filter info').setRequired(false)
       .addChoices(...serverInfoFields.map(f => ({ name: f, value: f })))),
   new SlashCommandBuilder().setName('genimage').setDescription('Generate an image from a prompt')
-    .addStringOption(o => o.setName('prompt').setDescription('What should the image show?').setRequired(true))
+    .addStringOption(o => o.setName('prompt').setDescription('Describe your image').setRequired(true))
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
@@ -181,61 +182,26 @@ client.on('interactionCreate', async interaction => {
     await interaction.deferReply();
     const prompt = options.getString('prompt');
     try {
-      const res = await axios.post('https://openrouter.ai/api/v1/images/generations', {
-        model: 'openai/dall-e-3',
-        prompt: prompt,
-        n: 1,
-        size: '1024x1024'
-      }, {
-        headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const imageUrl = res.data?.data?.[0]?.url;
+      const res = await axios.post(
+        'https://api.deepai.org/api/text2img',
+        { text: prompt },
+        { headers: { 'Api-Key': DEEPAI_API_KEY } }
+      );
+      const imageUrl = res.data.output_url;
       if (imageUrl) {
         return interaction.editReply({ content: `🖼️ Image generated for: "${prompt}"`, files: [imageUrl] });
       } else {
-        return interaction.editReply('⚠️ Failed to generate image.');
+        return interaction.editReply('⚠️ No image generated.');
       }
     } catch (err) {
-      console.error('❌ Image generation error:', err);
+      console.error('❌ DeepAI Error:', err);
       return interaction.editReply('❌ Failed to generate image.');
     }
   }
 });
 
-client.once('ready', async () => {
+client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  const statusUrl = 'https://api.mcstatus.io/v2/status/bedrock/87.106.101.66:6367';
-  let lastStatus = null;
-  let lastOnlineCount = 0;
-
-  setInterval(async () => {
-    try {
-      const res = await axios.get(statusUrl);
-      const data = res.data;
-      const isOnline = data?.online;
-      const onlineCount = data.players?.online || 0;
-      const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
-
-      if (lastStatus !== null && isOnline !== lastStatus) {
-        const msg = isOnline ? '🟢 Server is now ONLINE!' : '🔴 Server is now OFFLINE.';
-        if (logChannel?.isTextBased()) await logChannel.send(msg);
-        lastStatus = isOnline;
-      }
-      if (lastStatus === null) lastStatus = isOnline;
-
-      if (onlineCount !== lastOnlineCount) {
-        const msg = `👥 Player Count Changed: ${lastOnlineCount} → ${onlineCount}`;
-        if (logChannel?.isTextBased()) await logChannel.send(msg);
-        lastOnlineCount = onlineCount;
-      }
-    } catch (err) {
-      console.error('❌ Polling error:', err);
-    }
-  }, 30000);
 });
 
 client.login(DISCORD_BOT_TOKEN);
