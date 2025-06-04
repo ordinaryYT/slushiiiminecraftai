@@ -181,21 +181,31 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'genimage') {
     await interaction.deferReply();
     const prompt = options.getString('prompt');
+
     try {
-      const res = await axios.post(
-        'https://api.deepai.org/api/text2img',
-        { text: prompt },
-        { headers: { 'Api-Key': DEEPAI_API_KEY } }
+      const response = await axios.post(
+        'https://api.deepai.org/api/stable-diffusion',
+        new URLSearchParams({ text: prompt }),
+        {
+          headers: {
+            'Api-Key': DEEPAI_API_KEY,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          }
+        }
       );
-      const imageUrl = res.data.output_url;
+
+      const imageUrl = response.data.output_url;
       if (imageUrl) {
-        return interaction.editReply({ content: `🖼️ Image generated for: "${prompt}"`, files: [imageUrl] });
+        return interaction.editReply({
+          content: `🖼️ Image generated for: "${prompt}"`,
+          files: [imageUrl]
+        });
       } else {
-        return interaction.editReply('⚠️ No image generated.');
+        return interaction.editReply('⚠️ No image was generated.');
       }
-    } catch (err) {
-      console.error('❌ DeepAI Error:', err);
-      return interaction.editReply('❌ Failed to generate image.');
+    } catch (error) {
+      console.error('❌ DeepAI Error:', error.response?.data || error.message);
+      return interaction.editReply('❌ Failed to generate image. Please check your API key.');
     }
   }
 });
