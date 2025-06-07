@@ -631,6 +631,3 @@ client.once('ready', async () => {
 });
 
 client.login(DISCORD_BOT_TOKEN);
- 
-
- 
