@@ -39,14 +39,14 @@ const TEAMS_CHANNEL_ID = process.env.TEAMS_CHANNEL_ID || LOG_CHANNEL_ID;
 const db = new Pool({ connectionString: DATABASE_URL });
 
 const initDb = async () => {
-  await db.query(`
+  await db.query(
     CREATE TABLE IF NOT EXISTS joined_players (
       id SERIAL PRIMARY KEY,
       name TEXT UNIQUE,
       first_seen TIMESTAMPTZ DEFAULT NOW()
     );
-  `);
-  await db.query(`
+  );
+  await db.query(
     CREATE TABLE IF NOT EXISTS cords (
       id SERIAL PRIMARY KEY,
       user_id TEXT,
@@ -59,29 +59,29 @@ const initDb = async () => {
       team_id INT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
-  `);
-  await db.query(`
+  );
+  await db.query(
     CREATE TABLE IF NOT EXISTS teams (
       id SERIAL PRIMARY KEY,
       name TEXT UNIQUE,
       created_by TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
-  `);
-  await db.query(`
+  );
+  await db.query(
     CREATE TABLE IF NOT EXISTS user_teams (
       user_id TEXT PRIMARY KEY,
       team_id INT REFERENCES teams(id)
     );
-  `);
-  await db.query(`
+  );
+  await db.query(
     CREATE TABLE IF NOT EXISTS team_requests (
       id SERIAL PRIMARY KEY,
       user_id TEXT,
       team_id INT REFERENCES teams(id),
       requested_at TIMESTAMPTZ DEFAULT NOW()
     );
-  `);
+  );
 };
 
 const serverInfoFields = [
@@ -123,7 +123,25 @@ const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
   const content = message.content.toLowerCase();
+ // AI response (OrdinaryAI)
+  if (message.mentions.has(client.user)) {
+    const prompt = message.content.replace(/<@!?\d+>/, '').trim();
+    if (!prompt) return message.reply('❌ You must say something.');
 
+    const blocked = [
+      'what model are you',
+      'who is your provider',
+      'are you gpt',
+      'are you openai',
+      'are you llama',
+      'are you meta',
+      'what ai is this',
+      'which company made you'
+    ];
+
+    if (blocked.some(p => prompt.toLowerCase().includes(p))) {
+      return message.reply("I'm **OrdinaryAI**, your friendly assistant! Let’s focus on your question 😊");
+    }
   // AI via mention
   if (message.mentions.has(client.user)) {
     const prompt = message.content.replace(/<@!?\d+>/, '').trim();
@@ -134,7 +152,7 @@ client.on('messageCreate', async message => {
         messages: [{ role: 'user', content: prompt }]
       }, {
         headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          Authorization: Bearer ${OPENROUTER_API_KEY},
           'Content-Type': 'application/json'
         }
       });
@@ -148,13 +166,13 @@ client.on('messageCreate', async message => {
 
   // Join replies
   if (content.includes('how do i join') || content.includes('how to join') || content.includes('join server')) {
-    return message.reply(`⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**IP:** 87.106.101.66\n**Port:** 6367`);
+    return message.reply(⬇️ **SlxshyNationCraft Community Server info!** ⬇️\n**Server Name:** SlxshyNationCraft\n**IP:** 87.106.101.66\n**Port:** 6367);
   }
   if (content.includes('switch') || content.includes('console') || content.includes('xbox') || content.includes('ps4') || content.includes('ps5') || content.includes('phone') || content.includes('mobile')) {
-    return message.reply(`📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab (or Worlds tab in new UI) → Join via LAN.`);
+    return message.reply(📱 **How to Join on Console (Xbox, PlayStation, Switch, Mobile):**\nDownload the **"BedrockTogether"** app on your phone.\nEnter this server:\n**IP:** 87.106.101.66\n**Port:** 6367\nClick "Run".\nThen open Minecraft → Friends tab (or Worlds tab in new UI) → Join via LAN.);
   }
   if (content.includes('java')) {
-    return message.reply(`💻 **Java Edition Notice**:\nSlxshyNationCraft is a **Bedrock-only** server.\nJava Edition players can't join — sorry!`);
+    return message.reply(💻 **Java Edition Notice**:\nSlxshyNationCraft is a **Bedrock-only** server.\nJava Edition players can't join — sorry!);
   }
 });
 
@@ -210,7 +228,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ content: '❌ Unknown command', ephemeral: true });
     }
   } catch (error) {
-    console.error(`Error handling command ${commandName}:`, error);
+    console.error(Error handling command ${commandName}:, error);
     if (!interaction.replied) {
       await interaction.reply({ content: '❌ An error occurred while processing your command', ephemeral: true });
     }
@@ -233,33 +251,33 @@ async function handleSaveCords(interaction, user, options) {
   const teamId = teamRes.rows[0]?.team_id || null;
   
   await db.query(
-    `INSERT INTO cords (user_id, name, x, y, z, description, visibility, team_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    INSERT INTO cords (user_id, name, x, y, z, description, visibility, team_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8),
     [user.id, name, x, y, z, description, visibility, teamId]
   );
-  await interaction.editReply(`✅ Saved **${name}** as **${visibility}**.`);
+  await interaction.editReply(✅ Saved **${name}** as **${visibility}**.);
 }
 
 async function handlePrivateCords(interaction, user) {
   await interaction.deferReply({ ephemeral: true });
-  const res = await db.query(`SELECT * FROM cords WHERE user_id = $1 AND visibility = 'private'`, [user.id]);
+  const res = await db.query(SELECT * FROM cords WHERE user_id = $1 AND visibility = 'private', [user.id]);
   if (!res.rows.length) return interaction.editReply('📭 No private coordinates.');
-  const list = res.rows.map(r => `📍 **${r.name}** (${r.x},${r.y},${r.z})\n📝 ${r.description}`).join('\n\n');
+  const list = res.rows.map(r => 📍 **${r.name}** (${r.x},${r.y},${r.z})\n📝 ${r.description}).join('\n\n');
   await interaction.editReply({ content: list });
 }
 
 async function handlePublicCords(interaction) {
   await interaction.deferReply();
-  const res = await db.query(`SELECT * FROM cords WHERE visibility = 'public' ORDER BY created_at DESC LIMIT 10`);
+  const res = await db.query(SELECT * FROM cords WHERE visibility = 'public' ORDER BY created_at DESC LIMIT 10);
   if (!res.rows.length) return interaction.editReply('📭 No public coordinates.');
-  const list = res.rows.map(r => `📍 **${r.name}** (${r.x},${r.y},${r.z})\n📝 ${r.description}`).join('\n\n');
+  const list = res.rows.map(r => 📍 **${r.name}** (${r.x},${r.y},${r.z})\n📝 ${r.description}).join('\n\n');
   await interaction.editReply({ content: list });
 }
 
 async function handlePlayersJoined(interaction) {
-  const res = await db.query(`SELECT name, first_seen FROM joined_players ORDER BY first_seen ASC`);
+  const res = await db.query(SELECT name, first_seen FROM joined_players ORDER BY first_seen ASC);
   if (!res.rows.length) return interaction.reply('📭 No player records.');
-  const list = res.rows.map(r => `👤 ${r.name} - ${new Date(r.first_seen).toLocaleDateString()}`).join('\n');
+  const list = res.rows.map(r => 👤 ${r.name} - ${new Date(r.first_seen).toLocaleDateString()}).join('\n');
   await interaction.reply({ content: list });
 }
 
@@ -270,7 +288,7 @@ async function handleServerInfo(interaction, options) {
     const data = res.data;
     const filter = options.getString('filter');
     if (filter && data[filter]) {
-      return interaction.editReply(`**${filter}:**\n\`\`\`json\n${JSON.stringify(data[filter], null, 2)}\n\`\`\``);
+      return interaction.editReply(**${filter}:**\n\\\json\n${JSON.stringify(data[filter], null, 2)}\n\\\);
     }
     const embed = {
       title: 'SlxshyNationCraft Server Info',
@@ -304,10 +322,10 @@ async function handleCreateTeam(interaction, user, options) {
   
   // Create team embed
   const embed = new EmbedBuilder()
-    .setTitle(`🛡️ New Team: ${name}`)
-    .setDescription(`**Team Leader:** <@${user.id}>\n**Members:** <@${user.id}>\n\nUse the buttons below to manage your team!`)
+    .setTitle(🛡️ New Team: ${name})
+    .setDescription(**Team Leader:** <@${user.id}>\n**Members:** <@${user.id}>\n\nUse the buttons below to manage your team!)
     .setColor(0x00ff00)
-    .setFooter({ text: `Team created at ${new Date().toLocaleString()}` });
+    .setFooter({ text: Team created at ${new Date().toLocaleString()} });
   
   const row = new ActionRowBuilder()
     .addComponents(
@@ -325,14 +343,14 @@ async function handleCreateTeam(interaction, user, options) {
   const teamsChannel = await client.channels.fetch(TEAMS_CHANNEL_ID);
   if (teamsChannel?.isTextBased()) {
     await teamsChannel.send({ 
-      content: `🛡️ New team **${name}** has been created!`,
+      content: 🛡️ New team **${name}** has been created!,
       embeds: [embed],
       components: [row] 
     });
   }
   
   await interaction.reply({ 
-    content: `✅ Created and joined team **${name}**`, 
+    content: ✅ Created and joined team **${name}**, 
     ephemeral: true 
   });
 }
@@ -361,7 +379,7 @@ async function handleJoinTeam(interaction, user, options) {
   try {
     const leader = await interaction.guild.members.fetch(res.rows[0].created_by);
     if (leader) {
-      await leader.send(`📨 New join request for team **${name}** from <@${user.id}>!\nUse the "Approve Requests" button in the team channel to review.`);
+      await leader.send(📨 New join request for team **${name}** from <@${user.id}>!\nUse the "Approve Requests" button in the team channel to review.);
     }
   } catch (err) {
     console.error('Failed to notify team leader:', err);
@@ -387,21 +405,21 @@ async function handleTeamCords(interaction, user) {
   if (!cords.rows.length) return interaction.editReply({ content: '📭 No team coordinates' });
   
   const list = cords.rows.map(r => 
-    `📍 **${r.name}** (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}\n👤 Saved by <@${r.user_id}>`
+    📍 **${r.name}** (${r.x}, ${r.y}, ${r.z})\n📝 ${r.description}\n👤 Saved by <@${r.user_id}>
   ).join('\n\n');
   
-  await interaction.editReply({ content: `### Team Coordinates\n${list}` });
+  await interaction.editReply({ content: ### Team Coordinates\n${list} });
 }
 
 async function handleTeamInfo(interaction, user) {
   await interaction.deferReply({ ephemeral: true });
   
-  const teamRes = await db.query(`
+  const teamRes = await db.query(
     SELECT t.* 
     FROM teams t
     JOIN user_teams ut ON t.id = ut.team_id
     WHERE ut.user_id = $1
-  `, [user.id]);
+  , [user.id]);
   
   if (!teamRes.rows.length) return interaction.editReply({ content: '❌ You are not in a team' });
   
@@ -409,14 +427,14 @@ async function handleTeamInfo(interaction, user) {
   const requests = await db.query('SELECT COUNT(*) FROM team_requests WHERE team_id = $1', [teamRes.rows[0].id]);
   
   const embed = new EmbedBuilder()
-    .setTitle(`🛡️ Team ${teamRes.rows[0].name}`)
-    .setDescription(`**Leader:** <@${teamRes.rows[0].created_by}>\n**Created:** ${new Date(teamRes.rows[0].created_at).toLocaleString()}`)
+    .setTitle(🛡️ Team ${teamRes.rows[0].name})
+    .setDescription(**Leader:** <@${teamRes.rows[0].created_by}>\n**Created:** ${new Date(teamRes.rows[0].created_at).toLocaleString()})
     .addFields(
-      { name: 'Members', value: members.rows.map(m => `<@${m.user_id}>`).join('\n'), inline: true },
+      { name: 'Members', value: members.rows.map(m => <@${m.user_id}>).join('\n'), inline: true },
       { name: 'Pending Requests', value: requests.rows[0].count.toString(), inline: true }
     )
     .setColor(0x00ff00)
-    .setFooter({ text: `Use /teamcords to view team coordinates` });
+    .setFooter({ text: Use /teamcords to view team coordinates });
   
   await interaction.editReply({ embeds: [embed] });
 }
@@ -446,10 +464,10 @@ async function handleButtonInteraction(interaction) {
         const members = await db.query('SELECT user_id FROM user_teams WHERE team_id = $1', [teamRes.rows[0].team_id]);
         
         const embed = new EmbedBuilder()
-          .setTitle(`🛡️ Team: ${teamInfo.rows[0].name}`)
-          .setDescription(`**Team Leader:** <@${teamInfo.rows[0].created_by}>\n**Members:** ${members.rows.map(m => `<@${m.user_id}>`).join(', ')}`)
+          .setTitle(🛡️ Team: ${teamInfo.rows[0].name})
+          .setDescription(**Team Leader:** <@${teamInfo.rows[0].created_by}>\n**Members:** ${members.rows.map(m => <@${m.user_id}>).join(', ')})
           .setColor(0x00ff00)
-          .setFooter({ text: `Last updated at ${new Date().toLocaleString()}` });
+          .setFooter({ text: Last updated at ${new Date().toLocaleString()} });
         
         await message.edit({ embeds: [embed] });
       }
@@ -458,21 +476,21 @@ async function handleButtonInteraction(interaction) {
     }
     
     if (customId === 'approve_requests') {
-      const teamRes = await db.query(`
+      const teamRes = await db.query(
         SELECT t.id 
         FROM teams t
         JOIN user_teams ut ON t.id = ut.team_id
         WHERE t.created_by = $1 AND ut.user_id = $1
-      `, [user.id]);
+      , [user.id]);
       
       if (!teamRes.rows.length) return interaction.editReply({ content: '❌ Only team leaders can approve requests' });
       
-      const requests = await db.query(`
+      const requests = await db.query(
         SELECT tr.user_id, u.username 
         FROM team_requests tr
         JOIN users u ON tr.user_id = u.id
         WHERE tr.team_id = $1
-      `, [teamRes.rows[0].id]);
+      , [teamRes.rows[0].id]);
       
       if (!requests.rows.length) return interaction.editReply({ content: '📭 No pending requests' });
       
@@ -483,7 +501,7 @@ async function handleButtonInteraction(interaction) {
         .setMaxValues(requests.rows.length)
         .addOptions(requests.rows.map(r => ({
           label: r.username,
-          description: `User ID: ${r.user_id}`,
+          description: User ID: ${r.user_id},
           value: r.user_id
         })));
       
@@ -507,12 +525,12 @@ async function handleSelectMenuInteraction(interaction) {
   try {
     await interaction.deferReply({ ephemeral: true });
     
-    const teamRes = await db.query(`
+    const teamRes = await db.query(
       SELECT t.id, t.name
       FROM teams t
       JOIN user_teams ut ON t.id = ut.team_id
       WHERE t.created_by = $1 AND ut.user_id = $1
-    `, [interaction.user.id]);
+    , [interaction.user.id]);
     
     if (!teamRes.rows.length) return interaction.editReply({ content: '❌ Only team leaders can approve requests' });
     
@@ -523,10 +541,10 @@ async function handleSelectMenuInteraction(interaction) {
         
         const member = await interaction.guild.members.fetch(userId);
         if (member) {
-          await member.send(`🎉 Your request to join team **${teamRes.rows[0].name}** has been approved!`);
+          await member.send(🎉 Your request to join team **${teamRes.rows[0].name}** has been approved!);
         }
       } catch (err) {
-        console.error(`Failed to add user ${userId} to team:`, err);
+        console.error(Failed to add user ${userId} to team:, err);
       }
     }
     
@@ -534,14 +552,14 @@ async function handleSelectMenuInteraction(interaction) {
     const teamInfo = await db.query('SELECT * FROM teams WHERE id = $1', [teamRes.rows[0].id]);
     
     const embed = new EmbedBuilder()
-      .setTitle(`🛡️ Team: ${teamInfo.rows[0].name}`)
-      .setDescription(`**Team Leader:** <@${teamInfo.rows[0].created_by}>\n**Members:** ${members.rows.map(m => `<@${m.user_id}>`).join(', ')}`)
+      .setTitle(🛡️ Team: ${teamInfo.rows[0].name})
+      .setDescription(**Team Leader:** <@${teamInfo.rows[0].created_by}>\n**Members:** ${members.rows.map(m => <@${m.user_id}>).join(', ')})
       .setColor(0x00ff00)
-      .setFooter({ text: `Last updated at ${new Date().toLocaleString()}` });
+      .setFooter({ text: Last updated at ${new Date().toLocaleString()} });
     
     await interaction.message.edit({ embeds: [embed] });
     
-    await interaction.editReply({ content: `✅ Approved ${interaction.values.length} request(s)` });
+    await interaction.editReply({ content: ✅ Approved ${interaction.values.length} request(s) });
   } catch (error) {
     console.error('Select menu interaction error:', error);
     await interaction.editReply({ content: '❌ An error occurred', ephemeral: true });
@@ -550,7 +568,7 @@ async function handleSelectMenuInteraction(interaction) {
 
 // Server status monitoring
 client.once('ready', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+  console.log(✅ Logged in as ${client.user.tag});
   const statusUrl = 'https://api.mcstatus.io/v2/status/bedrock/87.106.101.66:6367';
   let lastStatus = null;
   let lastOnlineCount = 0;
@@ -571,7 +589,7 @@ client.once('ready', async () => {
       if (lastStatus === null) lastStatus = isOnline;
 
       if (onlineCount !== lastOnlineCount) {
-        const msg = `👥 Player Count Changed: ${lastOnlineCount} → ${onlineCount}`;
+        const msg = 👥 Player Count Changed: ${lastOnlineCount} → ${onlineCount};
         if (logChannel?.isTextBased()) await logChannel.send(msg);
         lastOnlineCount = onlineCount;
       }
@@ -582,3 +600,7 @@ client.once('ready', async () => {
 });
 
 client.login(DISCORD_BOT_TOKEN);
+
+ 
+
+ 
