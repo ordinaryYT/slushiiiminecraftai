@@ -184,7 +184,7 @@ client.on('messageCreate', async message => {
       
       // Additional filtering just in case
       if (blockedPhrases.some(p => reply.toLowerCase().includes(p))) {
-        reply = "I'm OrdinaryAI, here to help you with your questions!";
+        reply = "I'm SlxshyNationCraft AI powered by the ai model ordinaryAI, here to help you with your questions!";
       }
       
       return message.reply(reply);
