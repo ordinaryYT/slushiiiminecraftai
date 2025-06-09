@@ -40,8 +40,8 @@ const DELETED_MESSAGES_CHANNEL_ID = process.env.DELETED_MESSAGES_CHANNEL_ID || L
 const TEAMS_CHANNEL_ID = process.env.TEAMS_CHANNEL_ID || LOG_CHANNEL_ID;
 
 // Spam detection settings
-const SPAM_THRESHOLD = 5; // Number of messages
-const TIME_WINDOW = 10; // Seconds
+const SPAM_THRESHOLD = 5;
+const TIME_WINDOW = 10;
 
 const db = new Pool({ connectionString: DATABASE_URL });
 
@@ -116,9 +116,17 @@ const initDb = async () => {
 
 // Clean up old messages
 const cleanOldMessages = async () => {
-  await db.query(
-    "DELETE FROM message_tracking WHERE created_at < NOW() - INTERVAL '1 hour'"
-  );
+  try {
+    await db.query(
+      "DELETE FROM message_tracking WHERE created_at < NOW() - INTERVAL '1 hour'"
+    );
+  } catch (error) {
+    if (error.code === '42P01') { // Table doesn't exist error
+      console.log('message_tracking table not found, skipping cleanup');
+    } else {
+      console.error('Error cleaning old messages:', error);
+    }
+  }
 };
 
 // Spam detection
@@ -190,13 +198,20 @@ const commands = [
         .setRequired(true))
 ].map(c => c.toJSON());
 
-// Register commands
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
+
 (async () => {
   try {
     await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
     await initDb();
     console.log('✅ Successfully registered application commands and initialized database');
+    
+    // Start cleanup after DB is initialized
+    setTimeout(() => {
+      cleanOldMessages();
+      setInterval(cleanOldMessages, 60 * 60 * 1000);
+    }, 5000);
+    
   } catch (error) {
     console.error('❌ Failed to initialize:', error);
   }
@@ -443,9 +458,5 @@ client.on('interactionCreate', async interaction => {
     });
   }
 });
-
-// Clean up old messages periodically
-setInterval(cleanOldMessages, 60 * 60 * 1000);
-cleanOldMessages();
 
 client.login(DISCORD_BOT_TOKEN);
