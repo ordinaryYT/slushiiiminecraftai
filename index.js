@@ -28,16 +28,30 @@ const client = new Client({
   ]
 });
 
+// Configuration
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const DATABASE_URL = process.env.DATABASE_URL;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const LOG_CHANNEL_ID = '1377938133341180016';
+const MOD_ROLE_ID = process.env.MOD_ROLE_ID;
+const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '1377938133341180016';
+const DELETED_MESSAGES_CHANNEL_ID = process.env.DELETED_MESSAGES_CHANNEL_ID || LOG_CHANNEL_ID;
 const TEAMS_CHANNEL_ID = process.env.TEAMS_CHANNEL_ID || LOG_CHANNEL_ID;
+
+// Spam detection settings
+const SPAM_THRESHOLD = 5; // Number of messages
+const TIME_WINDOW = 10; // Seconds
 
 const db = new Pool({ connectionString: DATABASE_URL });
 
+// Helper function to format long messages
+const formatLongMessage = (content, maxLength = 1000) => {
+  if (content.length <= maxLength) return content;
+  return `${content.slice(0, maxLength - 3)}...`;
+};
+
+// Initialize database
 const initDb = async () => {
   await db.query(`
     CREATE TABLE IF NOT EXISTS joined_players (
@@ -82,13 +96,58 @@ const initDb = async () => {
       requested_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS warnings (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      moderator_id TEXT NOT NULL,
+      reason TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS message_tracking (
+      user_id TEXT NOT NULL,
+      message_content TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
 };
 
+// Clean up old messages
+const cleanOldMessages = async () => {
+  await db.query(
+    "DELETE FROM message_tracking WHERE created_at < NOW() - INTERVAL '1 hour'"
+  );
+};
+
+// Spam detection
+const detectSpam = async (message) => {
+  if (message.author.bot || message.member.roles.cache.has(MOD_ROLE_ID)) return false;
+  
+  await db.query(
+    'INSERT INTO message_tracking (user_id, message_content) VALUES ($1, $2)',
+    [message.author.id, message.content]
+  );
+
+  const result = await db.query(
+    `SELECT COUNT(*) FROM message_tracking 
+     WHERE user_id = $1 
+     AND created_at > NOW() - INTERVAL '${TIME_WINDOW} seconds'`,
+    [message.author.id]
+  );
+  
+  const messageCount = parseInt(result.rows[0].count);
+  return messageCount >= SPAM_THRESHOLD;
+};
+
+// Server info fields
 const serverInfoFields = [
   'online', 'host', 'port', 'version', 'players', 'gamemode',
   'edition', 'software', 'plugins', 'motd', 'retrieved_at', 'expires_at', 'eula_blocked'
 ];
 
+// Slash commands
 const commands = [
   new SlashCommandBuilder().setName('savecords').setDescription('Save coordinates')
     .addStringOption(o => o.setName('name').setDescription('Name').setRequired(true))
@@ -110,9 +169,28 @@ const commands = [
     .addStringOption(o => o.setName('name').setDescription('Team name').setRequired(true)),
   new SlashCommandBuilder().setName('leaveteam').setDescription('Leave your team'),
   new SlashCommandBuilder().setName('teamcords').setDescription('See cords for your team'),
-  new SlashCommandBuilder().setName('teaminfo').setDescription('Get info about your team')
+  new SlashCommandBuilder().setName('teaminfo').setDescription('Get info about your team'),
+  new SlashCommandBuilder()
+    .setName('warn')
+    .setDescription('Warn a user')
+    .addUserOption(option =>
+      option.setName('user')
+        .setDescription('The user to warn')
+        .setRequired(true))
+    .addStringOption(option =>
+      option.setName('reason')
+        .setDescription('Reason for the warning')
+        .setRequired(false)),
+  new SlashCommandBuilder()
+    .setName('warnings')
+    .setDescription('Check a user\'s warnings')
+    .addUserOption(option =>
+      option.setName('user')
+        .setDescription('The user to check')
+        .setRequired(true))
 ].map(c => c.toJSON());
 
+// Register commands
 const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
 (async () => {
   try {
@@ -129,27 +207,85 @@ client.on('messageCreate', async message => {
   if (message.author.bot) return;
   const content = message.content.toLowerCase();
 
-  // AI response (OrdinaryAI)
+  // Spam detection
+  const isSpamming = await detectSpam(message);
+  if (isSpamming) {
+    try {
+      const deletedMessageContent = message.content;
+      const messageAuthor = message.author;
+      const messageChannel = message.channel;
+
+      // Auto-warn the user
+      await db.query(
+        'INSERT INTO warnings (user_id, moderator_id, reason) VALUES ($1, $2, $3)',
+        [messageAuthor.id, client.user.id, 'Automated warning: Chat spam']
+      );
+
+      // Notify the user
+      await messageChannel.send({
+        content: `${messageAuthor}, please don't spam the chat. This is an automated warning.`,
+      });
+
+      // Delete the spam message and log it
+      try {
+        await message.delete();
+        
+        const deletedMessagesChannel = await message.guild.channels.fetch(DELETED_MESSAGES_CHANNEL_ID);
+        const embed = new EmbedBuilder()
+          .setColor('#ff5555')
+          .setTitle('🚨 Deleted Spam Message')
+          .setDescription(`Message deleted in ${messageChannel}`)
+          .addFields(
+            { name: 'Author', value: messageAuthor.toString(), inline: true },
+            { name: 'Channel', value: messageChannel.toString(), inline: true },
+            { name: 'Content', value: formatLongMessage(deletedMessageContent) }
+          )
+          .setFooter({ text: `User ID: ${messageAuthor.id}` })
+          .setTimestamp();
+
+        if (message.attachments.size > 0) {
+          embed.addFields(
+            { name: 'Attachments', value: message.attachments.map(a => a.url).join('\n') }
+          );
+        }
+
+        await deletedMessagesChannel.send({ embeds: [embed] });
+      } catch (deleteError) {
+        console.log('Could not delete spam message');
+      }
+
+      // Log to moderation channel
+      const logChannel = await message.guild.channels.fetch(LOG_CHANNEL_ID);
+      await logChannel.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor('#ffcc00')
+            .setTitle('⚠️ Auto Warning Issued')
+            .setDescription(`${messageAuthor} was automatically warned for spamming`)
+            .addFields(
+              { name: 'Channel', value: messageChannel.toString() },
+              { name: 'Deleted Content', value: formatLongMessage(deletedMessageContent, 100) }
+            )
+            .setTimestamp()
+        ]
+      });
+
+      return;
+    } catch (error) {
+      console.error('Error handling spam:', error);
+    }
+  }
+
+  // AI response
   if (message.mentions.has(client.user)) {
     const prompt = message.content.replace(/<@!?\d+>/, '').trim();
     if (!prompt) return message.reply('❌ You must say something.');
 
-    // Block identity-probing questions
     const blockedPhrases = [
-      'what model are you',
-      'who is your provider',
-      'are you gpt',
-      'are you openai',
-      'are you llama',
-      'are you meta',
-      'what ai is this',
-      'which company made you',
-      'who created you',
-      'what are you based on',
-      'what llm are you',
-      'what language model',
-      'who owns you',
-      'who developed you'
+      'what model are you', 'who is your provider', 'are you gpt',
+      'are you openai', 'are you llama', 'are you meta', 'what ai is this',
+      'which company made you', 'who created you', 'what are you based on',
+      'what llm are you', 'what language model', 'who owns you', 'who developed you'
     ];
 
     if (blockedPhrases.some(p => content.includes(p))) {
@@ -182,7 +318,6 @@ client.on('messageCreate', async message => {
       
       let reply = res.data.choices[0]?.message?.content || '⚠️ No response.';
       
-      // Additional filtering just in case
       if (blockedPhrases.some(p => reply.toLowerCase().includes(p))) {
         reply = "I'm SlxshyNationCraft AI powered by the ai model ordinaryAI, here to help you with your questions!";
       }
@@ -208,7 +343,109 @@ client.on('messageCreate', async message => {
   }
 });
 
-// [Rest of your code remains exactly the same...]
-// All the slash command handlers, button handlers, etc. stay unchanged
+// Interaction handling
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  try {
+    if (interaction.commandName === 'warn') {
+      if (!interaction.member.roles.cache.has(MOD_ROLE_ID)) {
+        return interaction.reply({
+          content: '❌ You do not have permission to use this command.',
+          ephemeral: true
+        });
+      }
+
+      const user = interaction.options.getUser('user');
+      const reason = interaction.options.getString('reason') || 'No reason provided';
+
+      await db.query(
+        'INSERT INTO warnings (user_id, moderator_id, reason) VALUES ($1, $2, $3)',
+        [user.id, interaction.user.id, reason]
+      );
+
+      await interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor('#ffcc00')
+            .setTitle('⚠️ Warning Issued')
+            .setDescription(`${user} has been warned by ${interaction.user}`)
+            .addFields({ name: 'Reason', value: reason })
+            .setTimestamp()
+        ]
+      });
+
+      try {
+        await user.send({
+          embeds: [
+            new EmbedBuilder()
+              .setColor('#ffcc00')
+              .setTitle('⚠️ You have received a warning')
+              .setDescription(`You have been warned in ${interaction.guild.name}`)
+              .addFields(
+                { name: 'Moderator', value: interaction.user.tag },
+                { name: 'Reason', value: reason }
+              )
+          ]
+        });
+      } catch (dmError) {
+        console.log(`Could not DM user ${user.tag}`);
+      }
+
+    } else if (interaction.commandName === 'warnings') {
+      if (!interaction.member.roles.cache.has(MOD_ROLE_ID)) {
+        return interaction.reply({
+          content: '❌ You do not have permission to use this command.',
+          ephemeral: true
+        });
+      }
+
+      const user = interaction.options.getUser('user');
+      const result = await db.query(
+        'SELECT * FROM warnings WHERE user_id = $1 ORDER BY created_at DESC',
+        [user.id]
+      );
+
+      if (result.rows.length === 0) {
+        return interaction.reply({
+          embeds: [
+            new EmbedBuilder()
+              .setColor('#00ff00')
+              .setDescription(`${user.tag} has no warnings.`)
+          ]
+        });
+      }
+
+      const warnings = result.rows.map(w => 
+        `**ID:** ${w.id}\n` +
+        `**Date:** ${new Date(w.created_at).toLocaleString()}\n` +
+        `**Moderator:** <@${w.moderator_id}>\n` +
+        `**Reason:** ${w.reason}\n`
+      ).join('\n');
+
+      await interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor('#ffcc00')
+            .setTitle(`⚠️ Warnings for ${user.tag}`)
+            .setDescription(warnings)
+            .setFooter({ text: `Total warnings: ${result.rows.length}` })
+        ],
+        ephemeral: true
+      });
+    }
+    // ... (your existing command handlers)
+  } catch (error) {
+    console.error(`Error handling command ${interaction.commandName}:`, error);
+    await interaction.reply({
+      content: '❌ An error occurred while executing this command.',
+      ephemeral: true
+    });
+  }
+});
+
+// Clean up old messages periodically
+setInterval(cleanOldMessages, 60 * 60 * 1000);
+cleanOldMessages();
 
 client.login(DISCORD_BOT_TOKEN);
